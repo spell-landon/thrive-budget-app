@@ -15,7 +15,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { getAccounts } from '../services/accounts';
 import { createTransaction } from '../services/transactions';
 import { getOrCreateCurrentMonthBudget, getBudgetCategories } from '../services/budgets';
-import { parseCurrencyInput } from '../utils/currency';
+import { parseCurrencyInput, formatCurrencyInput } from '../utils/currency';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { Account, BudgetCategory } from '../types';
 
 type TransactionType = 'income' | 'expense';
@@ -29,7 +30,8 @@ export default function AddTransactionScreen({ navigation }: any) {
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
   const [type, setType] = useState<TransactionType>('expense');
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]); // YYYY-MM-DD
+  const [date, setDate] = useState(new Date());
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadingAccounts, setLoadingAccounts] = useState(true);
   const [loadingCategories, setLoadingCategories] = useState(true);
@@ -100,7 +102,7 @@ export default function AddTransactionScreen({ navigation }: any) {
         amount: amountInCents,
         description: description.trim(),
         type,
-        date,
+        date: date.toISOString().split('T')[0],
         category_id: selectedCategoryId || undefined,
       });
 
@@ -116,16 +118,23 @@ export default function AddTransactionScreen({ navigation }: any) {
   const selectedAccount = accounts.find((acc) => acc.id === selectedAccountId);
 
   return (
-    <SafeAreaView className="flex-1 bg-gray-50" edges={['top']}>
+    <SafeAreaView className="flex-1 bg-gray-50" edges={['bottom']}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         className="flex-1"
       >
-        <View className="flex-row items-center px-6 py-4 bg-white border-b border-gray-200">
-          <TouchableOpacity onPress={() => navigation.goBack()} className="mr-4">
-            <Ionicons name="arrow-back" size={24} color="#1f2937" />
+        <View className="flex-row items-center justify-between px-6 py-4 bg-white border-b border-gray-200">
+          <View className="flex-row items-center">
+            <TouchableOpacity onPress={() => navigation.goBack()} className="mr-4">
+              <Ionicons name="arrow-back" size={24} color="#1f2937" />
+            </TouchableOpacity>
+            <Text className="text-xl font-bold text-gray-800">Add Transaction</Text>
+          </View>
+          <TouchableOpacity onPress={handleSubmit} disabled={loading || accounts.length === 0}>
+            <Text className={`text-base font-semibold ${loading || accounts.length === 0 ? 'text-gray-400' : 'text-blue-600'}`}>
+              {loading ? 'Adding...' : 'Add'}
+            </Text>
           </TouchableOpacity>
-          <Text className="text-xl font-bold text-gray-800">Add Transaction</Text>
         </View>
 
         <ScrollView className="flex-1">
@@ -309,6 +318,11 @@ export default function AddTransactionScreen({ navigation }: any) {
                   className="flex-1 py-3 pr-4"
                   value={amount}
                   onChangeText={setAmount}
+                  onBlur={() => {
+                    if (amount) {
+                      setAmount(formatCurrencyInput(amount));
+                    }
+                  }}
                   placeholder="0.00"
                   keyboardType="decimal-pad"
                 />
@@ -328,31 +342,39 @@ export default function AddTransactionScreen({ navigation }: any) {
             </View>
 
             {/* Date */}
-            <View className="mb-6">
+            <View>
               <Text className="text-gray-700 font-semibold mb-2">Date *</Text>
-              <TextInput
-                className="border border-gray-300 rounded-lg px-4 py-3 bg-white"
-                value={date}
-                onChangeText={setDate}
-                placeholder="YYYY-MM-DD"
-              />
-              <Text className="text-xs text-gray-500 mt-1">Format: YYYY-MM-DD (e.g., 2024-10-31)</Text>
+              <TouchableOpacity
+                onPress={() => setShowDatePicker(true)}
+                className="border border-gray-300 rounded-lg px-4 py-3 bg-white flex-row items-center justify-between"
+              >
+                <Text className="text-gray-800">
+                  {date.toLocaleDateString('en-US', {
+                    month: 'long',
+                    day: 'numeric',
+                    year: 'numeric',
+                  })}
+                </Text>
+                <Ionicons name="calendar-outline" size={20} color="#6b7280" />
+              </TouchableOpacity>
             </View>
-
-            {/* Submit Button */}
-            <TouchableOpacity
-              onPress={handleSubmit}
-              disabled={loading || accounts.length === 0}
-              className={`rounded-lg py-4 ${
-                loading || accounts.length === 0 ? 'bg-blue-400' : 'bg-blue-600'
-              }`}
-            >
-              <Text className="text-white text-center font-semibold text-lg">
-                {loading ? 'Adding...' : 'Add Transaction'}
-              </Text>
-            </TouchableOpacity>
           </View>
         </ScrollView>
+
+        {/* Date Picker Modal */}
+        {showDatePicker && (
+          <DateTimePicker
+            value={date}
+            mode="date"
+            display="default"
+            onChange={(event, selectedDate) => {
+              setShowDatePicker(Platform.OS === 'ios');
+              if (selectedDate) {
+                setDate(selectedDate);
+              }
+            }}
+          />
+        )}
       </KeyboardAvoidingView>
     </SafeAreaView>
   );

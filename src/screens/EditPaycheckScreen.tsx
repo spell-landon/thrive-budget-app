@@ -14,7 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { getPaycheckPlanById, updatePaycheckPlan } from '../services/paychecks';
-import { centsToInputValue, parseCurrencyInput } from '../utils/currency';
+import { centsToInputValue, parseCurrencyInput, formatCurrencyInput } from '../utils/currency';
 
 type FrequencyType = 'weekly' | 'biweekly' | 'semimonthly' | 'monthly';
 
@@ -108,7 +108,7 @@ export default function EditPaycheckScreen({ route, navigation }: any) {
 
   if (loading) {
     return (
-      <SafeAreaView className="flex-1 bg-gray-50" edges={['top']}>
+      <SafeAreaView className="flex-1 bg-gray-50" edges={['bottom']}>
         <View className="flex-1 items-center justify-center">
           <ActivityIndicator size="large" color="#2563eb" />
         </View>
@@ -117,17 +117,24 @@ export default function EditPaycheckScreen({ route, navigation }: any) {
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-gray-50" edges={['top']}>
+    <SafeAreaView className="flex-1 bg-gray-50" edges={['bottom']}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         className="flex-1"
       >
         {/* Header */}
-        <View className="flex-row items-center px-6 py-4 bg-white border-b border-gray-200">
-          <TouchableOpacity onPress={() => navigation.goBack()} className="mr-4">
-            <Ionicons name="arrow-back" size={24} color="#1f2937" />
+        <View className="flex-row items-center justify-between px-6 py-4 bg-white border-b border-gray-200">
+          <View className="flex-row items-center">
+            <TouchableOpacity onPress={() => navigation.goBack()} className="mr-4">
+              <Ionicons name="arrow-back" size={24} color="#1f2937" />
+            </TouchableOpacity>
+            <Text className="text-xl font-bold text-gray-800">Edit Paycheck</Text>
+          </View>
+          <TouchableOpacity onPress={handleSubmit} disabled={saving}>
+            <Text className={`text-base font-semibold ${saving ? 'text-gray-400' : 'text-blue-600'}`}>
+              {saving ? 'Saving...' : 'Save'}
+            </Text>
           </TouchableOpacity>
-          <Text className="text-xl font-bold text-gray-800">Edit Paycheck</Text>
         </View>
 
         <ScrollView className="flex-1">
@@ -153,6 +160,11 @@ export default function EditPaycheckScreen({ route, navigation }: any) {
                   className="flex-1 py-3 pr-4"
                   value={amount}
                   onChangeText={setAmount}
+                  onBlur={() => {
+                    if (amount) {
+                      setAmount(formatCurrencyInput(amount));
+                    }
+                  }}
                   placeholder="0.00"
                   keyboardType="decimal-pad"
                 />
@@ -202,7 +214,7 @@ export default function EditPaycheckScreen({ route, navigation }: any) {
             </View>
 
             {/* Next Paycheck Date */}
-            <View className="mb-6">
+            <View>
               <Text className="text-gray-700 font-semibold mb-2">Next Paycheck Date *</Text>
               <TouchableOpacity
                 onPress={() => setShowDatePicker(true)}
@@ -221,17 +233,6 @@ export default function EditPaycheckScreen({ route, navigation }: any) {
                 When will you receive your next paycheck?
               </Text>
             </View>
-
-            {/* Submit Button */}
-            <TouchableOpacity
-              onPress={handleSubmit}
-              disabled={saving}
-              className={`rounded-lg py-4 ${saving ? 'bg-blue-400' : 'bg-blue-600'}`}
-            >
-              <Text className="text-white text-center font-semibold text-lg">
-                {saving ? 'Saving...' : 'Save Changes'}
-              </Text>
-            </TouchableOpacity>
           </View>
         </ScrollView>
 

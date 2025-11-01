@@ -170,9 +170,11 @@ export default function TransactionsScreen({ navigation }: any) {
                   {/* Transactions for this date */}
                   <View className="px-4">
                     {dayTransactions.map((transaction) => (
-                      <View
+                      <TouchableOpacity
                         key={transaction.id}
+                        onPress={() => navigation.navigate('EditTransaction', { transactionId: transaction.id })}
                         className="bg-white rounded-xl p-4 mt-2 shadow-sm border border-gray-100"
+                        activeOpacity={0.7}
                       >
                         <View className="flex-row items-start justify-between">
                           <View className="flex-row items-center flex-1">
@@ -213,15 +215,27 @@ export default function TransactionsScreen({ navigation }: any) {
                               {transaction.type === 'income' ? '+' : '-'}
                               {formatCurrency(transaction.amount)}
                             </Text>
-                            <TouchableOpacity
-                              onPress={() => handleDeleteTransaction(transaction)}
-                              className="mt-1"
-                            >
-                              <Ionicons name="trash-outline" size={18} color="#ef4444" />
-                            </TouchableOpacity>
+                            <View className="flex-row items-center gap-2 mt-1">
+                              <TouchableOpacity
+                                onPress={(e) => {
+                                  e.stopPropagation();
+                                  navigation.navigate('EditTransaction', { transactionId: transaction.id });
+                                }}
+                              >
+                                <Ionicons name="pencil-outline" size={18} color="#2563eb" />
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                onPress={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteTransaction(transaction);
+                                }}
+                              >
+                                <Ionicons name="trash-outline" size={18} color="#ef4444" />
+                              </TouchableOpacity>
+                            </View>
                           </View>
                         </View>
-                      </View>
+                      </TouchableOpacity>
                     ))}
                   </View>
                 </View>

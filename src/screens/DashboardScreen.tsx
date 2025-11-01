@@ -18,7 +18,7 @@ import { Account, Budget, BudgetCategory, PaycheckPlan, Subscription } from '../
 import { useFocusEffect } from '@react-navigation/native';
 
 export default function DashboardScreen({ navigation }: any) {
-  const { user, signOut } = useAuth();
+  const { user } = useAuth();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [budget, setBudget] = useState<Budget | null>(null);
   const [categories, setCategories] = useState<BudgetCategory[]>([]);
@@ -83,16 +83,8 @@ export default function DashboardScreen({ navigation }: any) {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }>
         <View className='p-6'>
-          <View className='flex-row justify-between items-center mb-6'>
-            <Text className='text-2xl font-bold text-gray-800'>Dashboard</Text>
-            <TouchableOpacity
-              onPress={signOut}
-              className='bg-red-500 px-4 py-2 rounded-lg'>
-              <Text className='text-white font-semibold'>Sign Out</Text>
-            </TouchableOpacity>
-          </View>
-
-          <Text className='text-gray-600 mb-2'>Welcome back!</Text>
+          <Text className='text-2xl font-bold text-gray-800 mb-2'>Dashboard</Text>
+          <Text className='text-gray-600 mb-6'>Welcome back!</Text>
 
           {/* Net Worth Summary */}
           <View className='bg-blue-600 rounded-xl p-6 mb-6 shadow-lg'>

@@ -8,6 +8,7 @@ import MainTabNavigator from './MainTabNavigator';
 import AddAccountScreen from '../screens/AddAccountScreen';
 import EditAccountScreen from '../screens/EditAccountScreen';
 import AddTransactionScreen from '../screens/AddTransactionScreen';
+import EditTransactionScreen from '../screens/EditTransactionScreen';
 import AddBudgetCategoryScreen from '../screens/AddBudgetCategoryScreen';
 import EditBudgetCategoryScreen from '../screens/EditBudgetCategoryScreen';
 import PaycheckPlanningScreen from '../screens/PaycheckPlanningScreen';
@@ -54,6 +55,13 @@ export default function RootNavigator() {
             <Stack.Screen
               name="AddTransaction"
               component={AddTransactionScreen}
+              options={{
+                presentation: 'modal'
+              }}
+            />
+            <Stack.Screen
+              name="EditTransaction"
+              component={EditTransactionScreen}
               options={{
                 presentation: 'modal'
               }}

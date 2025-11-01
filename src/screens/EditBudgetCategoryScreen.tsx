@@ -13,7 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { getCategoryById, updateBudgetCategory } from '../services/budgets';
-import { centsToInputValue, parseCurrencyInput } from '../utils/currency';
+import { centsToInputValue, parseCurrencyInput, formatCurrencyInput } from '../utils/currency';
 
 type CategoryType = 'income' | 'expense' | 'savings';
 
@@ -82,7 +82,7 @@ export default function EditBudgetCategoryScreen({ route, navigation }: any) {
 
   if (loadingData) {
     return (
-      <SafeAreaView className="flex-1 bg-gray-50" edges={['top']}>
+      <SafeAreaView className="flex-1 bg-gray-50" edges={['bottom']}>
         <View className="flex-1 items-center justify-center">
           <ActivityIndicator size="large" color="#2563eb" />
         </View>
@@ -91,16 +91,23 @@ export default function EditBudgetCategoryScreen({ route, navigation }: any) {
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-gray-50" edges={['top']}>
+    <SafeAreaView className="flex-1 bg-gray-50" edges={['bottom']}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         className="flex-1"
       >
-        <View className="flex-row items-center px-6 py-4 bg-white border-b border-gray-200">
-          <TouchableOpacity onPress={() => navigation.goBack()} className="mr-4">
-            <Ionicons name="arrow-back" size={24} color="#1f2937" />
+        <View className="flex-row items-center justify-between px-6 py-4 bg-white border-b border-gray-200">
+          <View className="flex-row items-center">
+            <TouchableOpacity onPress={() => navigation.goBack()} className="mr-4">
+              <Ionicons name="arrow-back" size={24} color="#1f2937" />
+            </TouchableOpacity>
+            <Text className="text-xl font-bold text-gray-800">Edit Budget Category</Text>
+          </View>
+          <TouchableOpacity onPress={handleSubmit} disabled={loading}>
+            <Text className={`text-base font-semibold ${loading ? 'text-gray-400' : 'text-blue-600'}`}>
+              {loading ? 'Saving...' : 'Save'}
+            </Text>
           </TouchableOpacity>
-          <Text className="text-xl font-bold text-gray-800">Edit Budget Category</Text>
         </View>
 
         <ScrollView className="flex-1">
@@ -172,7 +179,7 @@ export default function EditBudgetCategoryScreen({ route, navigation }: any) {
             </View>
 
             {/* Allocated Amount */}
-            <View className="mb-6">
+            <View>
               <Text className="text-gray-700 font-semibold mb-2">
                 {type === 'income' ? 'Expected Amount *' : 'Allocated Amount *'}
               </Text>
@@ -182,6 +189,11 @@ export default function EditBudgetCategoryScreen({ route, navigation }: any) {
                   className="flex-1 py-3 pr-4"
                   value={allocatedAmount}
                   onChangeText={setAllocatedAmount}
+                  onBlur={() => {
+                    if (allocatedAmount) {
+                      setAllocatedAmount(formatCurrencyInput(allocatedAmount));
+                    }
+                  }}
                   placeholder="0.00"
                   keyboardType="decimal-pad"
                 />
@@ -194,17 +206,6 @@ export default function EditBudgetCategoryScreen({ route, navigation }: any) {
                   : 'How much do you want to save?'}
               </Text>
             </View>
-
-            {/* Submit Button */}
-            <TouchableOpacity
-              onPress={handleSubmit}
-              disabled={loading}
-              className={`rounded-lg py-4 ${loading ? 'bg-blue-400' : 'bg-blue-600'}`}
-            >
-              <Text className="text-white text-center font-semibold text-lg">
-                {loading ? 'Saving...' : 'Save Changes'}
-              </Text>
-            </TouchableOpacity>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>

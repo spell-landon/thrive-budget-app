@@ -6,6 +6,7 @@ import AccountsScreen from '../screens/AccountsScreen';
 import BudgetScreen from '../screens/BudgetScreen';
 import TransactionsScreen from '../screens/TransactionsScreen';
 import SubscriptionsScreen from '../screens/SubscriptionsScreen';
+import ProfileScreen from '../screens/ProfileScreen';
 
 const Tab = createBottomTabNavigator();
 
@@ -67,6 +68,15 @@ export default function MainTabNavigator() {
         options={{
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="repeat" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tab.Screen
+        name="Profile"
+        component={ProfileScreen}
+        options={{
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="person" size={size} color={color} />
           ),
         }}
       />

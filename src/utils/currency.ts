@@ -28,3 +28,19 @@ export function parseCurrencyInput(input: string): number {
 export function centsToInputValue(cents: number): string {
   return (cents / 100).toFixed(2);
 }
+
+// Format currency input string to always show .00 for whole numbers
+export function formatCurrencyInput(input: string): string {
+  if (!input || input.trim() === '') return '';
+
+  // Remove any non-numeric characters except decimal point
+  const cleaned = input.replace(/[^0-9.]/g, '');
+
+  // Parse as float
+  const value = parseFloat(cleaned);
+
+  if (isNaN(value)) return '';
+
+  // Always format with 2 decimal places
+  return value.toFixed(2);
+}

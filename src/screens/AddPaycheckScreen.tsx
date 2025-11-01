@@ -14,7 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useAuth } from '../contexts/AuthContext';
 import { createPaycheckPlan } from '../services/paychecks';
-import { parseCurrencyInput } from '../utils/currency';
+import { parseCurrencyInput, formatCurrencyInput } from '../utils/currency';
 
 type FrequencyType = 'weekly' | 'biweekly' | 'semimonthly' | 'monthly';
 
@@ -89,17 +89,24 @@ export default function AddPaycheckScreen({ navigation }: any) {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-gray-50" edges={['top']}>
+    <SafeAreaView className="flex-1 bg-gray-50" edges={['bottom']}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         className="flex-1"
       >
         {/* Header */}
-        <View className="flex-row items-center px-6 py-4 bg-white border-b border-gray-200">
-          <TouchableOpacity onPress={() => navigation.goBack()} className="mr-4">
-            <Ionicons name="arrow-back" size={24} color="#1f2937" />
+        <View className="flex-row items-center justify-between px-6 py-4 bg-white border-b border-gray-200">
+          <View className="flex-row items-center">
+            <TouchableOpacity onPress={() => navigation.goBack()} className="mr-4">
+              <Ionicons name="arrow-back" size={24} color="#1f2937" />
+            </TouchableOpacity>
+            <Text className="text-xl font-bold text-gray-800">Add Paycheck</Text>
+          </View>
+          <TouchableOpacity onPress={handleSubmit} disabled={loading}>
+            <Text className={`text-base font-semibold ${loading ? 'text-gray-400' : 'text-blue-600'}`}>
+              {loading ? 'Adding...' : 'Add'}
+            </Text>
           </TouchableOpacity>
-          <Text className="text-xl font-bold text-gray-800">Add Paycheck</Text>
         </View>
 
         <ScrollView className="flex-1">
@@ -125,6 +132,11 @@ export default function AddPaycheckScreen({ navigation }: any) {
                   className="flex-1 py-3 pr-4"
                   value={amount}
                   onChangeText={setAmount}
+                  onBlur={() => {
+                    if (amount) {
+                      setAmount(formatCurrencyInput(amount));
+                    }
+                  }}
                   placeholder="0.00"
                   keyboardType="decimal-pad"
                 />
@@ -174,7 +186,7 @@ export default function AddPaycheckScreen({ navigation }: any) {
             </View>
 
             {/* Next Paycheck Date */}
-            <View className="mb-6">
+            <View>
               <Text className="text-gray-700 font-semibold mb-2">Next Paycheck Date *</Text>
               <TouchableOpacity
                 onPress={() => setShowDatePicker(true)}
@@ -193,17 +205,6 @@ export default function AddPaycheckScreen({ navigation }: any) {
                 When will you receive your next paycheck?
               </Text>
             </View>
-
-            {/* Submit Button */}
-            <TouchableOpacity
-              onPress={handleSubmit}
-              disabled={loading}
-              className={`rounded-lg py-4 ${loading ? 'bg-blue-400' : 'bg-blue-600'}`}
-            >
-              <Text className="text-white text-center font-semibold text-lg">
-                {loading ? 'Creating...' : 'Create Paycheck'}
-              </Text>
-            </TouchableOpacity>
           </View>
         </ScrollView>
 

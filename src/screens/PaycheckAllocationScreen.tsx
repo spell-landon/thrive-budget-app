@@ -49,7 +49,9 @@ export default function PaycheckAllocationScreen({ route, navigation }: any) {
       // Load current month's budget and categories
       const budget = await getOrCreateCurrentMonthBudget(user.id);
       const categoriesData = await getBudgetCategories(budget.id);
-      setCategories(categoriesData);
+      // Filter out income categories - you don't allocate paycheck TO income categories
+      const nonIncomeCategories = categoriesData.filter((c) => c.category_type !== 'income');
+      setCategories(nonIncomeCategories);
 
       // Load existing allocations
       const existingAllocations = await getPaycheckAllocationsWithCategories(paycheckId);
@@ -268,7 +270,6 @@ export default function PaycheckAllocationScreen({ route, navigation }: any) {
             ) : (
               <>
                 {/* Allocations by Category Type */}
-                <AllocationSection title="Income" items={incomeAllocations} icon="cash" />
                 <AllocationSection title="Expenses" items={expenseAllocations} icon="cart" />
                 <AllocationSection title="Savings" items={savingsAllocations} icon="wallet" />
 

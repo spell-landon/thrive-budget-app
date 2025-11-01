@@ -16,7 +16,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { useAuth } from '../contexts/AuthContext';
 import { createSubscription } from '../services/subscriptions';
 import { getOrCreateCurrentMonthBudget, getBudgetCategories } from '../services/budgets';
-import { parseCurrencyInput } from '../utils/currency';
+import { parseCurrencyInput, formatCurrencyInput } from '../utils/currency';
 import { BudgetCategory } from '../types';
 
 type FrequencyType = 'weekly' | 'monthly' | 'quarterly' | 'yearly';
@@ -32,6 +32,7 @@ export default function AddSubscriptionScreen({ navigation }: any) {
   const [autoPay, setAutoPay] = useState(false);
   const [notes, setNotes] = useState('');
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const [loading, setLoading] = useState(false);
   const [categories, setCategories] = useState<BudgetCategory[]>([]);
 
@@ -80,6 +81,12 @@ export default function AddSubscriptionScreen({ navigation }: any) {
       },
     ];
 
+  const getCategoryName = (catId?: string) => {
+    if (!catId) return 'None';
+    const category = categories.find((cat) => cat.id === catId);
+    return category?.name || 'None';
+  };
+
   const handleSubmit = async () => {
     if (!user) return;
 
@@ -125,17 +132,24 @@ export default function AddSubscriptionScreen({ navigation }: any) {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-gray-50" edges={['top']}>
+    <SafeAreaView className="flex-1 bg-gray-50" edges={['bottom']}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         className="flex-1"
       >
         {/* Header */}
-        <View className="flex-row items-center px-6 py-4 bg-white border-b border-gray-200">
-          <TouchableOpacity onPress={() => navigation.goBack()} className="mr-4">
-            <Ionicons name="arrow-back" size={24} color="#1f2937" />
+        <View className="flex-row items-center justify-between px-6 py-4 bg-white border-b border-gray-200">
+          <View className="flex-row items-center">
+            <TouchableOpacity onPress={() => navigation.goBack()} className="mr-4">
+              <Ionicons name="arrow-back" size={24} color="#1f2937" />
+            </TouchableOpacity>
+            <Text className="text-xl font-bold text-gray-800">Add Subscription</Text>
+          </View>
+          <TouchableOpacity onPress={handleSubmit} disabled={loading}>
+            <Text className={`text-base font-semibold ${loading ? 'text-gray-400' : 'text-blue-600'}`}>
+              {loading ? 'Adding...' : 'Add'}
+            </Text>
           </TouchableOpacity>
-          <Text className="text-xl font-bold text-gray-800">Add Subscription</Text>
         </View>
 
         <ScrollView className="flex-1">
@@ -161,6 +175,11 @@ export default function AddSubscriptionScreen({ navigation }: any) {
                   className="flex-1 py-3 pr-4"
                   value={amount}
                   onChangeText={setAmount}
+                  onBlur={() => {
+                    if (amount) {
+                      setAmount(formatCurrencyInput(amount));
+                    }
+                  }}
                   placeholder="0.00"
                   keyboardType="decimal-pad"
                 />
@@ -206,48 +225,57 @@ export default function AddSubscriptionScreen({ navigation }: any) {
               </View>
             </View>
 
-            {/* Category */}
+            {/* Category Dropdown */}
             <View className="mb-4">
               <Text className="text-gray-700 font-semibold mb-2">
                 Budget Category (Optional)
               </Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                className="flex-row gap-2"
+              <TouchableOpacity
+                onPress={() => setShowCategoryDropdown(!showCategoryDropdown)}
+                className="border border-gray-300 rounded-lg px-4 py-3 bg-white flex-row items-center justify-between"
               >
-                <TouchableOpacity
-                  onPress={() => setCategoryId(undefined)}
-                  className={`px-4 py-2 rounded-lg border ${
-                    !categoryId ? 'bg-blue-100 border-blue-500' : 'bg-white border-gray-300'
-                  }`}
-                >
-                  <Text
-                    className={`text-sm ${!categoryId ? 'text-blue-700 font-semibold' : 'text-gray-700'}`}
-                  >
-                    None
-                  </Text>
-                </TouchableOpacity>
-                {categories.map((cat) => (
-                  <TouchableOpacity
-                    key={cat.id}
-                    onPress={() => setCategoryId(cat.id)}
-                    className={`px-4 py-2 rounded-lg border ${
-                      categoryId === cat.id
-                        ? 'bg-blue-100 border-blue-500'
-                        : 'bg-white border-gray-300'
-                    }`}
-                  >
-                    <Text
-                      className={`text-sm ${
-                        categoryId === cat.id ? 'text-blue-700 font-semibold' : 'text-gray-700'
-                      }`}
+                <Text className={categoryId ? 'text-gray-800' : 'text-gray-500'}>
+                  {getCategoryName(categoryId)}
+                </Text>
+                <Ionicons
+                  name={showCategoryDropdown ? 'chevron-up' : 'chevron-down'}
+                  size={20}
+                  color="#6b7280"
+                />
+              </TouchableOpacity>
+              {showCategoryDropdown && (
+                <View className="border border-gray-300 rounded-lg bg-white mt-1 max-h-48">
+                  <ScrollView>
+                    <TouchableOpacity
+                      onPress={() => {
+                        setCategoryId(undefined);
+                        setShowCategoryDropdown(false);
+                      }}
+                      className="flex-row items-center justify-between px-4 py-3 border-b border-gray-200"
                     >
-                      {cat.name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
+                      <Text className="text-gray-500">None</Text>
+                      {!categoryId && (
+                        <Ionicons name="checkmark-circle" size={20} color="#2563eb" />
+                      )}
+                    </TouchableOpacity>
+                    {categories.map((cat) => (
+                      <TouchableOpacity
+                        key={cat.id}
+                        onPress={() => {
+                          setCategoryId(cat.id);
+                          setShowCategoryDropdown(false);
+                        }}
+                        className="flex-row items-center justify-between px-4 py-3 border-b border-gray-200"
+                      >
+                        <Text className="text-gray-800">{cat.name}</Text>
+                        {categoryId === cat.id && (
+                          <Ionicons name="checkmark-circle" size={20} color="#2563eb" />
+                        )}
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
+              )}
             </View>
 
             {/* Next Billing Date */}
@@ -301,7 +329,7 @@ export default function AddSubscriptionScreen({ navigation }: any) {
             </View>
 
             {/* Notes */}
-            <View className="mb-6">
+            <View>
               <Text className="text-gray-700 font-semibold mb-2">Notes (Optional)</Text>
               <TextInput
                 className="border border-gray-300 rounded-lg px-4 py-3 bg-white"
@@ -313,17 +341,6 @@ export default function AddSubscriptionScreen({ navigation }: any) {
                 textAlignVertical="top"
               />
             </View>
-
-            {/* Submit Button */}
-            <TouchableOpacity
-              onPress={handleSubmit}
-              disabled={loading}
-              className={`rounded-lg py-4 ${loading ? 'bg-blue-400' : 'bg-blue-600'}`}
-            >
-              <Text className="text-white text-center font-semibold text-lg">
-                {loading ? 'Creating...' : 'Create Subscription'}
-              </Text>
-            </TouchableOpacity>
           </View>
         </ScrollView>
 

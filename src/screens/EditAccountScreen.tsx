@@ -14,7 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
 import { getAccountById, updateAccount } from '../services/accounts';
-import { centsToInputValue, parseCurrencyInput } from '../utils/currency';
+import { centsToInputValue, parseCurrencyInput, formatCurrencyInput } from '../utils/currency';
 
 type AccountType = 'checking' | 'savings' | 'credit_card' | 'investment' | 'loan';
 
@@ -95,16 +95,23 @@ export default function EditAccountScreen({ route, navigation }: any) {
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-gray-50" edges={['top']}>
+    <SafeAreaView className="flex-1 bg-gray-50" edges={['bottom']}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         className="flex-1"
       >
-        <View className="flex-row items-center px-6 py-4 bg-white border-b border-gray-200">
-          <TouchableOpacity onPress={() => navigation.goBack()} className="mr-4">
-            <Ionicons name="arrow-back" size={24} color="#1f2937" />
+        <View className="flex-row items-center justify-between px-6 py-4 bg-white border-b border-gray-200">
+          <View className="flex-row items-center">
+            <TouchableOpacity onPress={() => navigation.goBack()} className="mr-4">
+              <Ionicons name="arrow-back" size={24} color="#1f2937" />
+            </TouchableOpacity>
+            <Text className="text-xl font-bold text-gray-800">Edit Account</Text>
+          </View>
+          <TouchableOpacity onPress={handleSubmit} disabled={saving}>
+            <Text className={`text-base font-semibold ${saving ? 'text-gray-400' : 'text-blue-600'}`}>
+              {saving ? 'Saving...' : 'Save'}
+            </Text>
           </TouchableOpacity>
-          <Text className="text-xl font-bold text-gray-800">Edit Account</Text>
         </View>
 
         <ScrollView className="flex-1">
@@ -164,6 +171,11 @@ export default function EditAccountScreen({ route, navigation }: any) {
                   className="flex-1 py-3 pr-4"
                   value={balance}
                   onChangeText={setBalance}
+                  onBlur={() => {
+                    if (balance) {
+                      setBalance(formatCurrencyInput(balance));
+                    }
+                  }}
                   placeholder="0.00"
                   keyboardType="decimal-pad"
                 />
@@ -176,7 +188,7 @@ export default function EditAccountScreen({ route, navigation }: any) {
             </View>
 
             {/* Institution (Optional) */}
-            <View className="mb-6">
+            <View>
               <Text className="text-gray-700 font-semibold mb-2">Bank/Institution (Optional)</Text>
               <TextInput
                 className="border border-gray-300 rounded-lg px-4 py-3 bg-white"
@@ -186,17 +198,6 @@ export default function EditAccountScreen({ route, navigation }: any) {
                 autoCapitalize="words"
               />
             </View>
-
-            {/* Submit Button */}
-            <TouchableOpacity
-              onPress={handleSubmit}
-              disabled={saving}
-              className={`rounded-lg py-4 ${saving ? 'bg-blue-400' : 'bg-blue-600'}`}
-            >
-              <Text className="text-white text-center font-semibold text-lg">
-                {saving ? 'Saving...' : 'Save Changes'}
-              </Text>
-            </TouchableOpacity>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
