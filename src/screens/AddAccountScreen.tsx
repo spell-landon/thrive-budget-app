@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -15,7 +15,12 @@ import { useAuth } from '../contexts/AuthContext';
 import { createAccount } from '../services/accounts';
 import { parseCurrencyInput, formatCurrencyInput } from '../utils/currency';
 
-type AccountType = 'checking' | 'savings' | 'credit_card' | 'investment' | 'loan';
+type AccountType =
+  | 'checking'
+  | 'savings'
+  | 'credit_card'
+  | 'investment'
+  | 'loan';
 
 export default function AddAccountScreen({ navigation }: any) {
   const { user } = useAuth();
@@ -32,6 +37,14 @@ export default function AddAccountScreen({ navigation }: any) {
     { value: 'investment', label: 'Investment', icon: 'trending-up' },
     { value: 'loan', label: 'Loan', icon: 'cash-outline' },
   ];
+
+  // Pass submit handler to navigation params for header button
+  useEffect(() => {
+    navigation.setParams({
+      handleSubmit,
+      loading,
+    });
+  }, [loading]);
 
   const handleSubmit = async () => {
     if (!user) return;
@@ -63,63 +76,52 @@ export default function AddAccountScreen({ navigation }: any) {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-gray-50" edges={['bottom']}>
+    <SafeAreaView className='flex-1 bg-gray-50' edges={['bottom']}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        className="flex-1"
-      >
-        <View className="flex-row items-center justify-between px-6 py-4 bg-white border-b border-gray-200">
-          <View className="flex-row items-center">
-            <TouchableOpacity onPress={() => navigation.goBack()} className="mr-4">
-              <Ionicons name="arrow-back" size={24} color="#1f2937" />
-            </TouchableOpacity>
-            <Text className="text-xl font-bold text-gray-800">Add Account</Text>
-          </View>
-          <TouchableOpacity onPress={handleSubmit} disabled={loading}>
-            <Text className={`text-base font-semibold ${loading ? 'text-gray-400' : 'text-blue-600'}`}>
-              {loading ? 'Adding...' : 'Add'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        <ScrollView className="flex-1">
-          <View className="p-6">
+        className='flex-1'>
+        <ScrollView className='flex-1'>
+          <View className='p-6'>
             {/* Account Name */}
-            <View className="mb-4">
-              <Text className="text-gray-700 font-semibold mb-2">Account Name *</Text>
+            <View className='mb-4'>
+              <Text className='text-gray-700 font-semibold mb-2'>
+                Account Name *
+              </Text>
               <TextInput
-                className="border border-gray-300 rounded-lg px-4 py-3 bg-white"
+                className='border border-gray-300 rounded-lg px-4 py-3 bg-white'
                 value={name}
                 onChangeText={setName}
-                placeholder="e.g., Chase Checking"
-                autoCapitalize="words"
+                placeholder='e.g., Chase Checking'
+                autoCapitalize='words'
               />
             </View>
 
             {/* Account Type */}
-            <View className="mb-4">
-              <Text className="text-gray-700 font-semibold mb-2">Account Type *</Text>
-              <View className="flex-row flex-wrap gap-2">
+            <View className='mb-4'>
+              <Text className='text-gray-700 font-semibold mb-2'>
+                Account Type *
+              </Text>
+              <View className='flex-row flex-wrap gap-2'>
                 {accountTypes.map((accountType) => (
                   <TouchableOpacity
                     key={accountType.value}
                     onPress={() => setType(accountType.value)}
                     className={`flex-row items-center px-4 py-3 rounded-lg border ${
                       type === accountType.value
-                        ? 'bg-blue-100 border-blue-500'
+                        ? 'bg-primary-100 border-primary-500'
                         : 'bg-white border-gray-300'
-                    }`}
-                  >
+                    }`}>
                     <Ionicons
                       name={accountType.icon as any}
                       size={20}
-                      color={type === accountType.value ? '#2563eb' : '#6b7280'}
+                      color={type === accountType.value ? '#C93B00' : '#6b7280'}
                     />
                     <Text
                       className={`ml-2 ${
-                        type === accountType.value ? 'text-blue-700 font-semibold' : 'text-gray-700'
-                      }`}
-                    >
+                        type === accountType.value
+                          ? 'text-primary-700 font-semibold'
+                          : 'text-gray-700'
+                      }`}>
                       {accountType.label}
                     </Text>
                   </TouchableOpacity>
@@ -128,12 +130,14 @@ export default function AddAccountScreen({ navigation }: any) {
             </View>
 
             {/* Initial Balance */}
-            <View className="mb-4">
-              <Text className="text-gray-700 font-semibold mb-2">Initial Balance</Text>
-              <View className="flex-row items-center border border-gray-300 rounded-lg bg-white">
-                <Text className="text-gray-500 text-lg px-4">$</Text>
+            <View className='mb-4'>
+              <Text className='text-gray-700 font-semibold mb-2'>
+                Initial Balance
+              </Text>
+              <View className='flex-row items-center border border-gray-300 rounded-lg bg-white'>
+                <Text className='text-gray-500 text-lg px-4'>$</Text>
                 <TextInput
-                  className="flex-1 py-3 pr-4"
+                  className='flex-1 py-3 pr-4'
                   value={balance}
                   onChangeText={setBalance}
                   onBlur={() => {
@@ -141,24 +145,26 @@ export default function AddAccountScreen({ navigation }: any) {
                       setBalance(formatCurrencyInput(balance));
                     }
                   }}
-                  placeholder="0.00"
-                  keyboardType="decimal-pad"
+                  placeholder='0.00'
+                  keyboardType='decimal-pad'
                 />
               </View>
-              <Text className="text-xs text-gray-500 mt-1">
+              <Text className='text-xs text-gray-500 mt-1'>
                 Leave blank if you'll add the balance later
               </Text>
             </View>
 
             {/* Institution (Optional) */}
             <View>
-              <Text className="text-gray-700 font-semibold mb-2">Bank/Institution (Optional)</Text>
+              <Text className='text-gray-700 font-semibold mb-2'>
+                Bank/Institution (Optional)
+              </Text>
               <TextInput
-                className="border border-gray-300 rounded-lg px-4 py-3 bg-white"
+                className='border border-gray-300 rounded-lg px-4 py-3 bg-white'
                 value={institution}
                 onChangeText={setInstitution}
-                placeholder="e.g., Chase Bank"
-                autoCapitalize="words"
+                placeholder='e.g., Chase Bank'
+                autoCapitalize='words'
               />
             </View>
           </View>

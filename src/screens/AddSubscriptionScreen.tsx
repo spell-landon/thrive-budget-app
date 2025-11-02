@@ -9,14 +9,19 @@ import {
   KeyboardAvoidingView,
   Platform,
   Switch,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useAuth } from '../contexts/AuthContext';
 import { createSubscription } from '../services/subscriptions';
-import { getOrCreateCurrentMonthBudget, getBudgetCategories } from '../services/budgets';
+import {
+  getOrCreateCurrentMonthBudget,
+  getBudgetCategories,
+} from '../services/budgets';
 import { parseCurrencyInput, formatCurrencyInput } from '../utils/currency';
+import { formatDateToLocalString } from '../utils/date';
 import { BudgetCategory } from '../types';
 
 type FrequencyType = 'weekly' | 'monthly' | 'quarterly' | 'yearly';
@@ -30,15 +35,23 @@ export default function AddSubscriptionScreen({ navigation }: any) {
   const [nextBillingDate, setNextBillingDate] = useState(new Date());
   const [reminderDays, setReminderDays] = useState('3');
   const [autoPay, setAutoPay] = useState(false);
+  const [autoPopulateBudget, setAutoPopulateBudget] = useState(false);
   const [notes, setNotes] = useState('');
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const [loading, setLoading] = useState(false);
   const [categories, setCategories] = useState<BudgetCategory[]>([]);
 
   useEffect(() => {
     loadCategories();
   }, []);
+
+  // Pass submit handler to navigation params for header button
+  useEffect(() => {
+    navigation.setParams({
+      handleSubmit,
+      loading,
+    });
+  }, [loading]);
 
   const loadCategories = async () => {
     if (!user) return;
@@ -47,39 +60,45 @@ export default function AddSubscriptionScreen({ navigation }: any) {
       const budget = await getOrCreateCurrentMonthBudget(user.id);
       const categoriesData = await getBudgetCategories(budget.id);
       // Filter to only expense categories
-      setCategories(categoriesData.filter((c) => c.category_type === 'expense'));
+      setCategories(
+        categoriesData.filter((c) => c.category_type === 'expense')
+      );
     } catch (error) {
       console.error('Error loading categories:', error);
     }
   };
 
-  const frequencies: { value: FrequencyType; label: string; icon: string; description: string }[] =
-    [
-      {
-        value: 'weekly',
-        label: 'Weekly',
-        icon: 'calendar-outline',
-        description: 'Every 7 days',
-      },
-      {
-        value: 'monthly',
-        label: 'Monthly',
-        icon: 'calendar',
-        description: 'Once per month',
-      },
-      {
-        value: 'quarterly',
-        label: 'Quarterly',
-        icon: 'calendar-sharp',
-        description: 'Every 3 months',
-      },
-      {
-        value: 'yearly',
-        label: 'Yearly',
-        icon: 'calendar-number-outline',
-        description: 'Once per year',
-      },
-    ];
+  const frequencies: {
+    value: FrequencyType;
+    label: string;
+    icon: string;
+    description: string;
+  }[] = [
+    {
+      value: 'weekly',
+      label: 'Weekly',
+      icon: 'calendar-outline',
+      description: 'Every 7 days',
+    },
+    {
+      value: 'monthly',
+      label: 'Monthly',
+      icon: 'calendar',
+      description: 'Once per month',
+    },
+    {
+      value: 'quarterly',
+      label: 'Quarterly',
+      icon: 'calendar-sharp',
+      description: 'Every 3 months',
+    },
+    {
+      value: 'yearly',
+      label: 'Yearly',
+      icon: 'calendar-number-outline',
+      description: 'Once per year',
+    },
+  ];
 
   const getCategoryName = (catId?: string) => {
     if (!catId) return 'None';
@@ -116,9 +135,10 @@ export default function AddSubscriptionScreen({ navigation }: any) {
         amount: amountInCents,
         frequency,
         category_id: categoryId,
-        next_billing_date: nextBillingDate.toISOString().split('T')[0],
+        next_billing_date: formatDateToLocalString(nextBillingDate),
         reminder_days_before: reminderDaysNum,
         auto_pay: autoPay,
+        auto_populate_budget: autoPopulateBudget,
         notes: notes.trim() || undefined,
       });
 
@@ -132,47 +152,33 @@ export default function AddSubscriptionScreen({ navigation }: any) {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-gray-50" edges={['bottom']}>
+    <SafeAreaView className='flex-1 bg-gray-50' edges={['bottom']}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        className="flex-1"
-      >
-        {/* Header */}
-        <View className="flex-row items-center justify-between px-6 py-4 bg-white border-b border-gray-200">
-          <View className="flex-row items-center">
-            <TouchableOpacity onPress={() => navigation.goBack()} className="mr-4">
-              <Ionicons name="arrow-back" size={24} color="#1f2937" />
-            </TouchableOpacity>
-            <Text className="text-xl font-bold text-gray-800">Add Subscription</Text>
-          </View>
-          <TouchableOpacity onPress={handleSubmit} disabled={loading}>
-            <Text className={`text-base font-semibold ${loading ? 'text-gray-400' : 'text-blue-600'}`}>
-              {loading ? 'Adding...' : 'Add'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        <ScrollView className="flex-1">
-          <View className="p-6">
+        className='flex-1'>
+        <ScrollView className='flex-1'>
+          <View className='p-6'>
             {/* Subscription Name */}
-            <View className="mb-4">
-              <Text className="text-gray-700 font-semibold mb-2">Subscription Name *</Text>
+            <View className='mb-4'>
+              <Text className='text-gray-700 font-semibold mb-2'>
+                Subscription Name *
+              </Text>
               <TextInput
-                className="border border-gray-300 rounded-lg px-4 py-3 bg-white"
+                className='border border-gray-300 rounded-lg px-4 py-3 bg-white'
                 value={name}
                 onChangeText={setName}
-                placeholder="e.g., Netflix, Spotify, Gym"
-                autoCapitalize="words"
+                placeholder='e.g., Netflix, Spotify, Gym'
+                autoCapitalize='words'
               />
             </View>
 
             {/* Amount */}
-            <View className="mb-4">
-              <Text className="text-gray-700 font-semibold mb-2">Amount *</Text>
-              <View className="flex-row items-center border border-gray-300 rounded-lg bg-white">
-                <Text className="text-gray-500 text-lg px-4">$</Text>
+            <View className='mb-4'>
+              <Text className='text-gray-700 font-semibold mb-2'>Amount *</Text>
+              <View className='flex-row items-center border border-gray-300 rounded-lg bg-white'>
+                <Text className='text-gray-500 text-lg px-4'>$</Text>
                 <TextInput
-                  className="flex-1 py-3 pr-4"
+                  className='flex-1 py-3 pr-4'
                   value={amount}
                   onChangeText={setAmount}
                   onBlur={() => {
@@ -180,143 +186,126 @@ export default function AddSubscriptionScreen({ navigation }: any) {
                       setAmount(formatCurrencyInput(amount));
                     }
                   }}
-                  placeholder="0.00"
-                  keyboardType="decimal-pad"
+                  placeholder='0.00'
+                  keyboardType='decimal-pad'
                 />
               </View>
             </View>
 
             {/* Frequency */}
-            <View className="mb-4">
-              <Text className="text-gray-700 font-semibold mb-2">Billing Frequency *</Text>
-              <View className="gap-2">
+            <View className='mb-4'>
+              <Text className='text-gray-700 font-semibold mb-2'>
+                Billing Frequency *
+              </Text>
+              <View className='gap-2'>
                 {frequencies.map((freq) => (
                   <TouchableOpacity
                     key={freq.value}
                     onPress={() => setFrequency(freq.value)}
                     className={`flex-row items-center justify-between px-4 py-3 rounded-lg border ${
                       frequency === freq.value
-                        ? 'bg-blue-100 border-blue-500'
+                        ? 'bg-primary-100 border-primary-500'
                         : 'bg-white border-gray-300'
-                    }`}
-                  >
-                    <View className="flex-row items-center flex-1">
+                    }`}>
+                    <View className='flex-row items-center flex-1'>
                       <Ionicons
                         name={freq.icon as any}
                         size={20}
-                        color={frequency === freq.value ? '#2563eb' : '#6b7280'}
+                        color={frequency === freq.value ? '#C93B00' : '#6b7280'}
                       />
-                      <View className="ml-3 flex-1">
+                      <View className='ml-3 flex-1'>
                         <Text
                           className={`text-base font-semibold ${
-                            frequency === freq.value ? 'text-blue-700' : 'text-gray-800'
-                          }`}
-                        >
+                            frequency === freq.value
+                              ? 'text-primary-700'
+                              : 'text-gray-800'
+                          }`}>
                           {freq.label}
                         </Text>
-                        <Text className="text-xs text-gray-500">{freq.description}</Text>
+                        <Text className='text-xs text-gray-500'>
+                          {freq.description}
+                        </Text>
                       </View>
                     </View>
                     {frequency === freq.value && (
-                      <Ionicons name="checkmark-circle" size={22} color="#2563eb" />
+                      <Ionicons
+                        name='checkmark-circle'
+                        size={22}
+                        color='#C93B00'
+                      />
                     )}
                   </TouchableOpacity>
                 ))}
               </View>
             </View>
 
-            {/* Category Dropdown */}
-            <View className="mb-4">
-              <Text className="text-gray-700 font-semibold mb-2">
+            {/* Category Selection */}
+            <View className='mb-4'>
+              <Text className='text-gray-700 font-semibold mb-2'>
                 Budget Category (Optional)
               </Text>
               <TouchableOpacity
-                onPress={() => setShowCategoryDropdown(!showCategoryDropdown)}
-                className="border border-gray-300 rounded-lg px-4 py-3 bg-white flex-row items-center justify-between"
-              >
-                <Text className={categoryId ? 'text-gray-800' : 'text-gray-500'}>
+                onPress={() =>
+                  navigation.navigate('SelectCategory', {
+                    selectedCategoryId: categoryId,
+                    filterType: 'expense',
+                    onSelect: (selectedId: string | null) =>
+                      setCategoryId(selectedId || undefined),
+                  })
+                }
+                className='border border-gray-300 rounded-lg px-4 py-3 bg-white flex-row items-center justify-between'>
+                <Text
+                  className={categoryId ? 'text-gray-800' : 'text-gray-500'}>
                   {getCategoryName(categoryId)}
                 </Text>
-                <Ionicons
-                  name={showCategoryDropdown ? 'chevron-up' : 'chevron-down'}
-                  size={20}
-                  color="#6b7280"
-                />
+                <Ionicons name='chevron-down' size={20} color='#6b7280' />
               </TouchableOpacity>
-              {showCategoryDropdown && (
-                <View className="border border-gray-300 rounded-lg bg-white mt-1 max-h-48">
-                  <ScrollView>
-                    <TouchableOpacity
-                      onPress={() => {
-                        setCategoryId(undefined);
-                        setShowCategoryDropdown(false);
-                      }}
-                      className="flex-row items-center justify-between px-4 py-3 border-b border-gray-200"
-                    >
-                      <Text className="text-gray-500">None</Text>
-                      {!categoryId && (
-                        <Ionicons name="checkmark-circle" size={20} color="#2563eb" />
-                      )}
-                    </TouchableOpacity>
-                    {categories.map((cat) => (
-                      <TouchableOpacity
-                        key={cat.id}
-                        onPress={() => {
-                          setCategoryId(cat.id);
-                          setShowCategoryDropdown(false);
-                        }}
-                        className="flex-row items-center justify-between px-4 py-3 border-b border-gray-200"
-                      >
-                        <Text className="text-gray-800">{cat.name}</Text>
-                        {categoryId === cat.id && (
-                          <Ionicons name="checkmark-circle" size={20} color="#2563eb" />
-                        )}
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
-              )}
             </View>
 
             {/* Next Billing Date */}
-            <View className="mb-4">
-              <Text className="text-gray-700 font-semibold mb-2">Next Billing Date *</Text>
+            <View className='mb-4'>
+              <Text className='text-gray-700 font-semibold mb-2'>
+                Next Billing Date *
+              </Text>
               <TouchableOpacity
                 onPress={() => setShowDatePicker(true)}
-                className="border border-gray-300 rounded-lg px-4 py-3 bg-white flex-row items-center justify-between"
-              >
-                <Text className="text-gray-800">
+                className='border border-gray-300 rounded-lg px-4 py-3 bg-white flex-row items-center justify-between'>
+                <Text className='text-gray-800'>
                   {nextBillingDate.toLocaleDateString('en-US', {
                     month: 'long',
                     day: 'numeric',
                     year: 'numeric',
                   })}
                 </Text>
-                <Ionicons name="calendar-outline" size={20} color="#6b7280" />
+                <Ionicons name='calendar-outline' size={20} color='#6b7280' />
               </TouchableOpacity>
             </View>
 
             {/* Reminder Days */}
-            <View className="mb-4">
-              <Text className="text-gray-700 font-semibold mb-2">Remind Me (Days Before)</Text>
+            <View className='mb-4'>
+              <Text className='text-gray-700 font-semibold mb-2'>
+                Remind Me (Days Before)
+              </Text>
               <TextInput
-                className="border border-gray-300 rounded-lg px-4 py-3 bg-white"
+                className='border border-gray-300 rounded-lg px-4 py-3 bg-white'
                 value={reminderDays}
                 onChangeText={setReminderDays}
-                placeholder="3"
-                keyboardType="number-pad"
+                placeholder='3'
+                keyboardType='number-pad'
               />
-              <Text className="text-xs text-gray-500 mt-1">
-                You'll see a reminder {reminderDays} day{reminderDays !== '1' ? 's' : ''} before
-                billing
+              <Text className='text-xs text-gray-500 mt-1'>
+                You'll see a reminder {reminderDays} day
+                {reminderDays !== '1' ? 's' : ''} before billing
               </Text>
             </View>
 
             {/* Auto-pay Toggle */}
-            <View className="flex-row items-center justify-between mb-4">
-              <View className="flex-1 mr-4">
-                <Text className="text-gray-700 font-semibold mb-1">Auto-pay Enabled</Text>
-                <Text className="text-xs text-gray-500">
+            <View className='flex-row items-center justify-between mb-4'>
+              <View className='flex-1 mr-4'>
+                <Text className='text-gray-700 font-semibold mb-1'>
+                  Auto-pay Enabled
+                </Text>
+                <Text className='text-xs text-gray-500'>
                   Does this subscription automatically charge your account?
                 </Text>
               </View>
@@ -328,35 +317,97 @@ export default function AddSubscriptionScreen({ navigation }: any) {
               />
             </View>
 
+            {/* Auto-populate Budget Toggle */}
+            {categoryId && (
+              <View className='flex-row items-center justify-between mb-4'>
+                <View className='flex-1 mr-4'>
+                  <Text className='text-gray-700 font-semibold mb-1'>
+                    Auto-populate Budget
+                  </Text>
+                  <Text className='text-xs text-gray-500'>
+                    Automatically set the category budget to match this subscription amount each month
+                  </Text>
+                </View>
+                <Switch
+                  value={autoPopulateBudget}
+                  onValueChange={setAutoPopulateBudget}
+                  trackColor={{ false: '#d1d5db', true: '#93c5fd' }}
+                  thumbColor={autoPopulateBudget ? '#2563eb' : '#f3f4f6'}
+                />
+              </View>
+            )}
+
             {/* Notes */}
             <View>
-              <Text className="text-gray-700 font-semibold mb-2">Notes (Optional)</Text>
+              <Text className='text-gray-700 font-semibold mb-2'>
+                Notes (Optional)
+              </Text>
               <TextInput
-                className="border border-gray-300 rounded-lg px-4 py-3 bg-white"
+                className='border border-gray-300 rounded-lg px-4 py-3 bg-white'
                 value={notes}
                 onChangeText={setNotes}
-                placeholder="Any additional details..."
+                placeholder='Any additional details...'
                 multiline
                 numberOfLines={3}
-                textAlignVertical="top"
+                textAlignVertical='top'
               />
             </View>
           </View>
         </ScrollView>
 
-        {/* Date Picker Modal */}
-        {showDatePicker && (
+        {/* Date Picker */}
+        {showDatePicker && Platform.OS === 'android' && (
           <DateTimePicker
             value={nextBillingDate}
-            mode="date"
-            display="default"
+            mode='date'
+            display='calendar'
             onChange={(event, selectedDate) => {
-              setShowDatePicker(Platform.OS === 'ios');
-              if (selectedDate) {
+              setShowDatePicker(false);
+              if (event.type === 'set' && selectedDate) {
                 setNextBillingDate(selectedDate);
               }
             }}
           />
+        )}
+
+        {/* Date Picker Modal for iOS */}
+        {Platform.OS === 'ios' && (
+          <Modal
+            visible={showDatePicker}
+            transparent
+            animationType='slide'
+            onRequestClose={() => setShowDatePicker(false)}>
+            <View className='flex-1 bg-black/50 justify-end'>
+              <View className='bg-white rounded-t-3xl pb-8'>
+                <View className='flex-row items-center justify-between px-6 py-4 border-b border-gray-200'>
+                  <TouchableOpacity onPress={() => setShowDatePicker(false)}>
+                    <Text className='text-base font-semibold text-gray-600'>
+                      Cancel
+                    </Text>
+                  </TouchableOpacity>
+                  <Text className='text-lg font-bold text-gray-800'>
+                    Select Date
+                  </Text>
+                  <TouchableOpacity onPress={() => setShowDatePicker(false)}>
+                    <Text className='text-base font-semibold text-primary'>
+                      Done
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+                <DateTimePicker
+                  value={nextBillingDate}
+                  mode='date'
+                  display='inline'
+                  style={{ marginLeft: 'auto', marginRight: 'auto' }}
+                  onChange={(event, selectedDate) => {
+                    if (selectedDate) {
+                      setNextBillingDate(selectedDate);
+                    }
+                  }}
+                />
+              </View>
+            </View>
+          </Modal>
         )}
       </KeyboardAvoidingView>
     </SafeAreaView>

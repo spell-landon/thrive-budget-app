@@ -1,5 +1,5 @@
-import React, { useState, useCallback } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, RefreshControl, Alert } from 'react-native';
+import React, { useState, useCallback, useMemo } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, RefreshControl, Alert, TextInput, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -11,9 +11,14 @@ import {
   deleteBudgetCategory,
   copyBudgetCategories,
   getBudgets,
+  getReadyToAssign,
 } from '../services/budgets';
 import { formatCurrency } from '../utils/currency';
 import { Budget, BudgetCategory } from '../types';
+
+type CategoryType = 'all' | 'income' | 'expense' | 'savings';
+type SpendingFilter = 'all' | 'on-track' | 'warning' | 'over';
+type SortOption = 'group' | 'alphabetical' | 'amount' | 'spending';
 
 export default function BudgetScreen({ navigation }: any) {
   const { user } = useAuth();
@@ -22,6 +27,16 @@ export default function BudgetScreen({ navigation }: any) {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [collapsedSections, setCollapsedSections] = useState<{ [key: string]: boolean }>({});
+  const [readyToAssign, setReadyToAssign] = useState<number>(0);
+
+  // Search, Filter, Sort state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [typeFilter, setTypeFilter] = useState<CategoryType>('all');
+  const [spendingFilter, setSpendingFilter] = useState<SpendingFilter>('all');
+  const [sortOption, setSortOption] = useState<SortOption>('group');
+  const [showSortModal, setShowSortModal] = useState(false);
+  const [hideUnbudgeted, setHideUnbudgeted] = useState(false);
 
   const formatMonthKey = (date: Date) => {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
@@ -43,10 +58,15 @@ export default function BudgetScreen({ navigation }: any) {
       setBudget(budgetData);
 
       if (budgetData) {
-        const categoriesData = await getBudgetCategories(budgetData.id);
+        const [categoriesData, readyToAssignAmount] = await Promise.all([
+          getBudgetCategories(budgetData.id),
+          getReadyToAssign(user.id, budgetData.id),
+        ]);
         setCategories(categoriesData);
+        setReadyToAssign(readyToAssignAmount);
       } else {
         setCategories([]);
+        setReadyToAssign(0);
       }
     } catch (error: any) {
       Alert.alert('Error', error.message);
@@ -137,10 +157,99 @@ export default function BudgetScreen({ navigation }: any) {
     navigation.navigate('EditBudgetCategory', { categoryId: category.id, budgetId: budget!.id });
   };
 
-  // Group categories by type
-  const incomeCategories = categories.filter((c) => c.category_type === 'income');
-  const expenseCategories = categories.filter((c) => c.category_type === 'expense');
-  const savingsCategories = categories.filter((c) => c.category_type === 'savings');
+  const handleCategoryMenu = (category: BudgetCategory) => {
+    Alert.alert(
+      category.name,
+      'Choose an action',
+      [
+        {
+          text: 'Edit',
+          onPress: () => handleEditCategory(category),
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => handleDeleteCategory(category),
+        },
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+      ]
+    );
+  };
+
+  // Filter and sort categories
+  const filteredAndSortedCategories = useMemo(() => {
+    let filtered = [...categories];
+
+    // Apply search filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(cat => cat.name.toLowerCase().includes(query));
+    }
+
+    // Apply type filter
+    if (typeFilter !== 'all') {
+      filtered = filtered.filter(cat => cat.category_type === typeFilter);
+    }
+
+    // Apply hide unbudgeted filter
+    if (hideUnbudgeted) {
+      filtered = filtered.filter(cat => cat.allocated_amount > 0);
+    }
+
+    // Apply spending status filter
+    if (spendingFilter !== 'all') {
+      filtered = filtered.filter(cat => {
+        if (cat.allocated_amount === 0) return spendingFilter === 'on-track';
+        const percentage = (cat.spent_amount / cat.allocated_amount) * 100;
+
+        if (spendingFilter === 'on-track') return percentage < 80;
+        if (spendingFilter === 'warning') return percentage >= 80 && percentage < 100;
+        if (spendingFilter === 'over') return percentage >= 100;
+        return true;
+      });
+    }
+
+    // Apply sorting
+    if (sortOption === 'alphabetical') {
+      filtered.sort((a, b) => a.name.localeCompare(b.name));
+    } else if (sortOption === 'amount') {
+      filtered.sort((a, b) => b.allocated_amount - a.allocated_amount);
+    } else if (sortOption === 'spending') {
+      filtered.sort((a, b) => {
+        const percentA = a.allocated_amount > 0 ? (a.spent_amount / a.allocated_amount) * 100 : 0;
+        const percentB = b.allocated_amount > 0 ? (b.spent_amount / b.allocated_amount) * 100 : 0;
+        return percentB - percentA;
+      });
+    }
+    // 'group' sorting is handled by grouping logic below
+
+    return filtered;
+  }, [categories, searchQuery, typeFilter, spendingFilter, sortOption, hideUnbudgeted]);
+
+  // Group categories by category_group and sort by allocated amount within each group
+  const groupedCategories: Record<string, BudgetCategory[]> = {};
+  filteredAndSortedCategories.forEach((category) => {
+    const groupName = category.category_group || 'Ungrouped';
+    if (!groupedCategories[groupName]) {
+      groupedCategories[groupName] = [];
+    }
+    groupedCategories[groupName].push(category);
+  });
+
+  // Sort categories within each group by allocated amount (highest first)
+  Object.keys(groupedCategories).forEach(groupName => {
+    groupedCategories[groupName].sort((a, b) => b.allocated_amount - a.allocated_amount);
+  });
+
+  // Get sorted group names (put Ungrouped last)
+  const groupNames = Object.keys(groupedCategories).sort((a, b) => {
+    if (a === 'Ungrouped') return 1;
+    if (b === 'Ungrouped') return -1;
+    return a.localeCompare(b);
+  });
 
   const remaining = budget ? budget.total_income - budget.total_allocated : 0;
 
@@ -151,112 +260,207 @@ export default function BudgetScreen({ navigation }: any) {
 
   const getProgressColor = (spent: number, allocated: number) => {
     const percentage = (spent / allocated) * 100;
-    if (percentage >= 100) return 'bg-red-500';
-    if (percentage >= 80) return 'bg-orange-500';
-    return 'bg-green-500';
+    if (percentage >= 100) return 'bg-error-500';
+    if (percentage >= 80) return 'bg-primary-500';
+    return 'bg-success-500';
+  };
+
+  const toggleSection = (title: string) => {
+    setCollapsedSections(prev => ({
+      ...prev,
+      [title]: !prev[title]
+    }));
+  };
+
+  const toggleAllSections = () => {
+    // Check if all are collapsed
+    const allCollapsed = groupNames.every(name => collapsedSections[name]);
+
+    // If all are collapsed, expand all. Otherwise, collapse all.
+    const newState: { [key: string]: boolean } = {};
+    groupNames.forEach(name => {
+      newState[name] = !allCollapsed;
+    });
+    setCollapsedSections(newState);
   };
 
   const CategorySection = ({
-    title,
+    groupName,
     categories,
-    icon,
   }: {
-    title: string;
+    groupName: string;
     categories: BudgetCategory[];
-    icon: string;
   }) => {
     if (categories.length === 0) return null;
 
-    const totalAllocated = categories.reduce((sum, c) => sum + c.allocated_amount, 0);
-    const totalSpent = categories.reduce((sum, c) => sum + c.spent_amount, 0);
+    const [localCategories, setLocalCategories] = useState(categories);
 
-    return (
-      <View className="mb-4">
-        <View className="flex-row items-center justify-between mb-2 px-1">
-          <View className="flex-row items-center">
-            <Ionicons name={icon as any} size={18} color="#2563eb" />
-            <Text className="text-base font-bold text-gray-800 ml-2">{title}</Text>
+    // Update local state when categories prop changes
+    React.useEffect(() => {
+      setLocalCategories(categories);
+    }, [categories]);
+
+    const totalAllocated = localCategories.reduce((sum, c) => sum + c.allocated_amount, 0);
+    const totalAvailable = localCategories.reduce((sum, c) => sum + c.available_amount, 0);
+    const totalSpent = localCategories.reduce((sum, c) => sum + c.spent_amount, 0);
+    const isCollapsed = collapsedSections[groupName] || false;
+
+    // Use folder icon for all groups
+    const icon = groupName !== 'Ungrouped' ? 'folder' : 'folder-outline';
+    const categoryCount = localCategories.length;
+
+    const renderCategoryCard = (category: BudgetCategory) => {
+      // With envelope budgeting: progress is spent/available (not spent/allocated)
+      const progress = getProgressPercentage(category.spent_amount, category.available_amount);
+      const progressColor = getProgressColor(category.spent_amount, category.available_amount);
+      const remaining = category.available_amount - category.spent_amount;
+      const isOverspent = remaining < 0;
+      const needsFunding = category.available_amount === 0 && category.allocated_amount > 0;
+
+      return (
+        <View
+          className={`bg-card rounded-2xl p-4 mb-3 ${
+            isOverspent ? 'border-2 border-error-500' : needsFunding ? 'border-2 border-primary-300' : 'border border-gray-100'
+          }`}
+          style={{
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 1 },
+            shadowOpacity: 0.05,
+            shadowRadius: 2,
+            elevation: 1,
+          }}
+        >
+          {/* Warning Banner for Overspending */}
+          {isOverspent && (
+            <View className="bg-error-50 rounded-lg p-2 mb-3 flex-row items-center">
+              <Ionicons name="alert-circle" size={16} color="#EF4444" />
+              <Text className="text-error-700 text-xs font-semibold ml-2">
+                Overspent by {formatCurrency(Math.abs(remaining))}
+              </Text>
+            </View>
+          )}
+          {/* Info Banner for Needs Funding */}
+          {needsFunding && !isOverspent && (
+            <View className="bg-primary-50 rounded-lg p-2 mb-3 flex-row items-center">
+              <Ionicons name="information-circle" size={16} color="#FF6B35" />
+              <Text className="text-primary-700 text-xs font-semibold ml-2">
+                Needs funding - {formatCurrency(category.allocated_amount)} planned
+              </Text>
+            </View>
+          )}
+
+          <View className="flex-row justify-between items-start mb-3">
+            <View className="flex-1">
+              <Text className="text-base font-semibold text-text-primary">{category.name}</Text>
+              <Text className="text-xs text-text-tertiary mt-0.5">
+                {formatCurrency(category.allocated_amount)} budgeted/month
+              </Text>
+            </View>
+            <View className="flex-row items-center">
+              <View className="items-end">
+                <Text className={`text-xl font-bold ${isOverspent ? 'text-error-600' : 'text-text-primary'}`}>
+                  {formatCurrency(category.available_amount)}
+                </Text>
+                <Text className="text-xs text-text-secondary">
+                  {formatCurrency(category.spent_amount)} spent
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => handleCategoryMenu(category)}
+                className="ml-2 p-1"
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Ionicons name="ellipsis-vertical" size={20} color="#9ca3af" />
+              </TouchableOpacity>
+            </View>
           </View>
-          <View className="items-end">
-            <Text className="text-xs text-gray-500 font-medium">
-              {formatCurrency(totalSpent)} / {formatCurrency(totalAllocated)}
+
+          {/* Progress Bar - shows spent vs available */}
+          <View className="mb-2">
+            <View className="h-2 bg-gray-200 rounded-full overflow-hidden">
+              <View className={`h-2 ${progressColor} rounded-full`} style={{ width: `${progress}%` }} />
+            </View>
+          </View>
+
+          {/* Bottom Row: Available status */}
+          <View className="flex-row items-center justify-between">
+            <Text className="text-sm text-text-secondary">
+              Available in bucket
+            </Text>
+            <Text
+              className={`text-sm font-semibold ${
+                remaining >= 0 ? 'text-success-600' : 'text-error-600'
+              }`}
+            >
+              {formatCurrency(Math.abs(remaining))} {remaining >= 0 ? 'left' : 'over'}
             </Text>
           </View>
         </View>
+      );
+    };
 
-        {categories.map((category) => {
-          const progress = getProgressPercentage(category.spent_amount, category.allocated_amount);
-          const progressColor = getProgressColor(category.spent_amount, category.allocated_amount);
-          const remaining = category.allocated_amount - category.spent_amount;
-
-          return (
-            <TouchableOpacity
-              key={category.id}
-              onPress={() => handleEditCategory(category)}
-              className="bg-white rounded-lg p-3 mb-2 shadow-sm border border-gray-100"
-              activeOpacity={0.7}
-            >
-              {/* Top Row: Name and Delete */}
-              <View className="flex-row justify-between items-center mb-2">
-                <Text className="text-base font-semibold text-gray-800 flex-1">{category.name}</Text>
-                <TouchableOpacity
-                  onPress={(e) => {
-                    e.stopPropagation();
-                    handleDeleteCategory(category);
-                  }}
-                  className="ml-2"
-                >
-                  <Ionicons name="trash-outline" size={16} color="#ef4444" />
-                </TouchableOpacity>
-              </View>
-
-              {/* Bottom Row: Amounts and Progress */}
+    return (
+      <View className="mb-4">
+        <TouchableOpacity
+          onPress={() => toggleSection(groupName)}
+          className="flex-row items-center justify-between mb-3 px-1"
+          activeOpacity={0.7}
+        >
+          <View className="flex-row items-center flex-1">
+            <Ionicons name={icon as any} size={20} color="#FF6B35" />
+            <View className="ml-2 flex-1">
               <View className="flex-row items-center">
-                <View className="flex-1">
-                  <View className="flex-row items-baseline mb-1">
-                    <Text className="text-lg font-bold text-gray-800">
-                      {formatCurrency(category.spent_amount)}
-                    </Text>
-                    <Text className="text-xs text-gray-500 ml-1">
-                      / {formatCurrency(category.allocated_amount)}
-                    </Text>
-                  </View>
-                  {/* Inline Progress Bar */}
-                  <View className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                    <View className={`h-1.5 ${progressColor} rounded-full`} style={{ width: `${progress}%` }} />
-                  </View>
-                </View>
-                <View className="ml-3 items-end">
-                  <Text className="text-xs text-gray-500 mb-0.5">
-                    {remaining >= 0 ? 'Left' : 'Over'}
-                  </Text>
-                  <Text
-                    className={`text-base font-bold ${
-                      remaining >= 0 ? 'text-green-600' : 'text-red-600'
-                    }`}
-                  >
-                    {formatCurrency(Math.abs(remaining))}
-                  </Text>
+                <Text className="text-lg font-bold text-text-primary">{groupName}</Text>
+                <View className="ml-2 bg-gray-200 px-2 py-0.5 rounded-full">
+                  <Text className="text-xs text-gray-600 font-semibold">{categoryCount}</Text>
                 </View>
               </View>
-            </TouchableOpacity>
-          );
-        })}
+            </View>
+            <Ionicons
+              name={isCollapsed ? 'chevron-down' : 'chevron-up'}
+              size={20}
+              color="#6B7280"
+              className="ml-2"
+            />
+          </View>
+          <View className="items-end ml-2">
+            <Text className="text-sm font-bold text-text-primary">
+              {formatCurrency(totalAvailable)}
+            </Text>
+            <Text className="text-xs text-text-secondary">
+              {formatCurrency(totalSpent)} spent
+            </Text>
+          </View>
+        </TouchableOpacity>
+
+        {!isCollapsed && (
+          <>
+            {localCategories.map((category) => (
+              <TouchableOpacity
+                key={category.id}
+                onPress={() => handleEditCategory(category)}
+                activeOpacity={0.7}
+              >
+                {renderCategoryCard(category)}
+              </TouchableOpacity>
+            ))}
+          </>
+        )}
       </View>
     );
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-gray-50" edges={['top']}>
-      <View className="flex-1">
+    <SafeAreaView className="flex-1 bg-card" edges={['top']}>
+      <View className="flex-1 bg-background">
         {/* Header with Month Navigation */}
-        <View className="px-6 py-4 bg-white border-b border-gray-200">
+        <View className="px-6 py-4 bg-card border-b border-gray-200">
           <View className="flex-row justify-between items-center mb-3">
-            <Text className="text-2xl font-bold text-gray-800">Budget</Text>
+            <Text className="text-2xl font-bold text-text-primary">Budget</Text>
             {budget && (
               <TouchableOpacity
                 onPress={() => navigation.navigate('AddBudgetCategory', { budgetId: budget.id })}
-                className="bg-blue-600 px-4 py-2 rounded-lg"
+                className="bg-primary px-4 py-2 rounded-lg"
               >
                 <Text className="text-white font-semibold">Add Category</Text>
               </TouchableOpacity>
@@ -266,33 +470,215 @@ export default function BudgetScreen({ navigation }: any) {
           {/* Month Navigation */}
           <View className="flex-row items-center justify-between">
             <TouchableOpacity onPress={handlePreviousMonth} className="p-2">
-              <Ionicons name="chevron-back" size={24} color="#2563eb" />
+              <Ionicons name="chevron-back" size={24} color="#FF6B35" />
             </TouchableOpacity>
-            <Text className="text-lg font-semibold text-gray-700">{formatMonthDisplay(currentMonth)}</Text>
+            <Text className="text-lg font-semibold text-text-primary">{formatMonthDisplay(currentMonth)}</Text>
             <TouchableOpacity onPress={handleNextMonth} className="p-2">
-              <Ionicons name="chevron-forward" size={24} color="#2563eb" />
+              <Ionicons name="chevron-forward" size={24} color="#FF6B35" />
             </TouchableOpacity>
           </View>
         </View>
 
         <ScrollView className="flex-1" refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
+          {budget && categories.length > 0 && (
+            <View className="px-4 pt-4 pb-2 bg-background">
+              {/* Search Bar */}
+              <View className="mb-3">
+                <View className="flex-row items-center bg-card border border-gray-200 rounded-lg px-4 py-2">
+                  <Ionicons name="search" size={20} color="#9ca3af" />
+                  <TextInput
+                    className="flex-1 ml-2 py-1 text-base text-text-primary"
+                    placeholder="Search categories..."
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                    placeholderTextColor="#9ca3af"
+                    textAlignVertical="center"
+                  />
+                  {searchQuery.length > 0 && (
+                    <TouchableOpacity onPress={() => setSearchQuery('')}>
+                      <Ionicons name="close-circle" size={20} color="#9ca3af" />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+
+              {/* Filter and Sort Row */}
+              <View className="flex-row items-center justify-between mb-2">
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-1">
+                  {/* Type Filters */}
+                  <TouchableOpacity
+                    onPress={() => setTypeFilter('all')}
+                    className={`mr-2 px-3 py-1.5 rounded-full border ${
+                      typeFilter === 'all'
+                        ? 'bg-primary border-primary'
+                        : 'bg-card border-gray-300'
+                    }`}
+                  >
+                    <Text className={`text-sm font-semibold ${typeFilter === 'all' ? 'text-white' : 'text-gray-700'}`}>
+                      All
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => setTypeFilter('income')}
+                    className={`mr-2 px-3 py-1.5 rounded-full border ${
+                      typeFilter === 'income'
+                        ? 'bg-success-500 border-success-500'
+                        : 'bg-card border-gray-300'
+                    }`}
+                  >
+                    <Text className={`text-sm font-semibold ${typeFilter === 'income' ? 'text-white' : 'text-gray-700'}`}>
+                      Income
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => setTypeFilter('expense')}
+                    className={`mr-2 px-3 py-1.5 rounded-full border ${
+                      typeFilter === 'expense'
+                        ? 'bg-error-500 border-error-500'
+                        : 'bg-card border-gray-300'
+                    }`}
+                  >
+                    <Text className={`text-sm font-semibold ${typeFilter === 'expense' ? 'text-white' : 'text-gray-700'}`}>
+                      Expenses
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => setTypeFilter('savings')}
+                    className={`mr-2 px-3 py-1.5 rounded-full border ${
+                      typeFilter === 'savings'
+                        ? 'bg-blue-500 border-blue-500'
+                        : 'bg-card border-gray-300'
+                    }`}
+                  >
+                    <Text className={`text-sm font-semibold ${typeFilter === 'savings' ? 'text-white' : 'text-gray-700'}`}>
+                      Savings
+                    </Text>
+                  </TouchableOpacity>
+                </ScrollView>
+
+                {/* Sort Button */}
+                <TouchableOpacity
+                  onPress={() => setShowSortModal(true)}
+                  className="ml-2 bg-card border border-gray-300 p-2 rounded-lg"
+                >
+                  <Ionicons name="funnel" size={20} color="#FF6B35" />
+                </TouchableOpacity>
+              </View>
+
+              {/* Hide Unbudgeted Toggle */}
+              <TouchableOpacity
+                onPress={() => setHideUnbudgeted(!hideUnbudgeted)}
+                className={`flex-row items-center px-3 py-2 rounded-lg mb-2 ${
+                  hideUnbudgeted ? 'bg-primary-100 border-2 border-primary' : 'bg-gray-100 border-2 border-transparent'
+                }`}
+              >
+                <Ionicons
+                  name={hideUnbudgeted ? 'eye-off' : 'eye-off-outline'}
+                  size={18}
+                  color={hideUnbudgeted ? '#FF6B35' : '#6b7280'}
+                />
+                <Text className={`text-sm ml-2 ${hideUnbudgeted ? 'font-semibold text-primary' : 'text-gray-700'}`}>
+                  Hide $0 Budgeted
+                </Text>
+              </TouchableOpacity>
+
+              {/* Spending Status Filters */}
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-2">
+                <TouchableOpacity
+                  onPress={() => setSpendingFilter('all')}
+                  className={`mr-2 px-3 py-1 rounded-full ${
+                    spendingFilter === 'all' ? 'bg-gray-200' : 'bg-gray-100'
+                  }`}
+                >
+                  <Text className={`text-xs ${spendingFilter === 'all' ? 'font-semibold text-gray-800' : 'text-gray-600'}`}>
+                    All Status
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => setSpendingFilter('on-track')}
+                  className={`mr-2 px-3 py-1 rounded-full ${
+                    spendingFilter === 'on-track' ? 'bg-success-100' : 'bg-gray-100'
+                  }`}
+                >
+                  <Text className={`text-xs ${spendingFilter === 'on-track' ? 'font-semibold text-success-700' : 'text-gray-600'}`}>
+                    On Track
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => setSpendingFilter('warning')}
+                  className={`mr-2 px-3 py-1 rounded-full ${
+                    spendingFilter === 'warning' ? 'bg-primary-100' : 'bg-gray-100'
+                  }`}
+                >
+                  <Text className={`text-xs ${spendingFilter === 'warning' ? 'font-semibold text-primary-700' : 'text-gray-600'}`}>
+                    Warning
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => setSpendingFilter('over')}
+                  className={`mr-2 px-3 py-1 rounded-full ${
+                    spendingFilter === 'over' ? 'bg-error-100' : 'bg-gray-100'
+                  }`}
+                >
+                  <Text className={`text-xs ${spendingFilter === 'over' ? 'font-semibold text-error-700' : 'text-gray-600'}`}>
+                    Over Budget
+                  </Text>
+                </TouchableOpacity>
+              </ScrollView>
+
+              {/* Active filters indicator */}
+              {(searchQuery || typeFilter !== 'all' || spendingFilter !== 'all' || sortOption !== 'group' || hideUnbudgeted) && (
+                <TouchableOpacity
+                  onPress={() => {
+                    setSearchQuery('');
+                    setTypeFilter('all');
+                    setSpendingFilter('all');
+                    setSortOption('group');
+                    setHideUnbudgeted(false);
+                  }}
+                  className="flex-row items-center mb-2"
+                >
+                  <Text className="text-xs text-primary font-semibold">Clear all filters</Text>
+                  <Ionicons name="close-circle" size={16} color="#FF6B35" className="ml-1" />
+                </TouchableOpacity>
+              )}
+
+              {/* Expand/Collapse All Button */}
+              {groupNames.length > 1 && (
+                <TouchableOpacity
+                  onPress={toggleAllSections}
+                  className="flex-row items-center justify-center py-2 px-4 bg-gray-100 rounded-lg mb-2"
+                >
+                  <Ionicons
+                    name={groupNames.every(name => collapsedSections[name]) ? 'chevron-down-circle' : 'chevron-up-circle'}
+                    size={18}
+                    color="#6b7280"
+                  />
+                  <Text className="text-sm font-semibold text-gray-700 ml-2">
+                    {groupNames.every(name => collapsedSections[name]) ? 'Expand All' : 'Collapse All'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
           {loading ? (
-            <Text className="text-gray-600 text-center mt-8">Loading budget...</Text>
+            <Text className="text-text-secondary text-center mt-8">Loading budget...</Text>
           ) : !budget ? (
             <View className="items-center mt-8 px-4">
               <Ionicons name="calendar-outline" size={64} color="#9ca3af" />
-              <Text className="text-gray-600 mt-4 text-center mb-4">
+              <Text className="text-text-secondary mt-4 text-center mb-4">
                 No budget for {formatMonthDisplay(currentMonth)} yet.
               </Text>
               <TouchableOpacity
                 onPress={() => handleCreateBudget(false)}
-                className="bg-blue-600 px-6 py-3 rounded-lg mb-3"
+                className="bg-primary px-6 py-3 rounded-lg mb-3"
               >
                 <Text className="text-white font-semibold">Create Budget</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={() => handleCreateBudget(true)}
-                className="bg-gray-600 px-6 py-3 rounded-lg"
+                className="bg-text-primary px-6 py-3 rounded-lg"
               >
                 <Text className="text-white font-semibold">Copy from Previous Month</Text>
               </TouchableOpacity>
@@ -300,16 +686,64 @@ export default function BudgetScreen({ navigation }: any) {
           ) : (
             <View className="p-4">
               {/* Budget Summary - Redesigned */}
-              <View className="bg-blue-600 rounded-2xl p-5 mb-4 shadow-lg">
+              <View className="bg-primary rounded-2xl p-5 mb-4"
+                style={{
+                  shadowColor: '#FF6B35',
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.15,
+                  shadowRadius: 8,
+                  elevation: 4,
+                }}
+              >
+                {/* Ready to Assign Banner */}
+                {readyToAssign > 0 && (
+                  <View className="bg-white/10 rounded-xl p-3 mb-4 border border-white/20">
+                    <View className="flex-row items-center justify-between">
+                      <View className="flex-row items-center flex-1">
+                        <Ionicons name="cash-outline" size={24} color="#ffffff" />
+                        <View className="ml-3 flex-1">
+                          <Text className="text-white text-xs font-medium">Ready to Assign</Text>
+                          <Text className="text-white text-2xl font-bold">
+                            {formatCurrency(readyToAssign)}
+                          </Text>
+                        </View>
+                      </View>
+                      <TouchableOpacity
+                        onPress={() => {
+                          navigation.navigate('AssignMoney', { budgetId: budget.id });
+                        }}
+                        className="bg-white/20 px-4 py-2 rounded-lg">
+                        <Text className="text-white text-sm font-semibold">Assign</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
+                {readyToAssign < 0 && (
+                  <View className="bg-error-500/20 rounded-xl p-3 mb-4 border border-error-300/50">
+                    <View className="flex-row items-center">
+                      <Ionicons name="warning" size={24} color="#FCA5A5" />
+                      <View className="ml-3 flex-1">
+                        <Text className="text-error-100 text-xs font-medium">Over-Allocated!</Text>
+                        <Text className="text-white text-lg font-bold">
+                          {formatCurrency(Math.abs(readyToAssign))} too much
+                        </Text>
+                        <Text className="text-error-100 text-xs mt-1">
+                          You've assigned more money than you have in accounts
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                )}
+
                 <View className="flex-row justify-between items-start mb-4">
                   <View>
-                    <Text className="text-blue-100 text-xs uppercase font-semibold tracking-wide mb-1">
+                    <Text className="text-primary-100 text-xs uppercase font-semibold tracking-wide mb-1">
                       Monthly Budget
                     </Text>
                     <Text className="text-white text-3xl font-bold">
                       {formatCurrency(budget.total_income)}
                     </Text>
-                    <Text className="text-blue-100 text-xs mt-1">Total Income</Text>
+                    <Text className="text-primary-100 text-xs mt-1">Total Income</Text>
                   </View>
                   <View className="bg-white/20 rounded-full px-3 py-1">
                     <Text className="text-white text-xs font-semibold">
@@ -321,7 +755,7 @@ export default function BudgetScreen({ navigation }: any) {
                 {/* Progress Bar */}
                 <View className="mb-3">
                   <View className="flex-row justify-between mb-2">
-                    <Text className="text-blue-100 text-xs font-medium">
+                    <Text className="text-primary-100 text-xs font-medium">
                       {formatCurrency(budget.total_allocated)} allocated
                     </Text>
                     <Text className="text-white text-xs font-semibold">
@@ -333,7 +767,7 @@ export default function BudgetScreen({ navigation }: any) {
                   <View className="h-2 bg-white/20 rounded-full overflow-hidden">
                     <View
                       className={`h-2 rounded-full ${
-                        remaining < 0 ? 'bg-red-400' : remaining === 0 ? 'bg-green-400' : 'bg-white'
+                        remaining < 0 ? 'bg-error-400' : remaining === 0 ? 'bg-success-400' : 'bg-white'
                       }`}
                       style={{
                         width: `${Math.min((budget.total_allocated / Math.max(budget.total_income, 1)) * 100, 100)}%`,
@@ -344,12 +778,12 @@ export default function BudgetScreen({ navigation }: any) {
 
                 {/* Remaining Amount */}
                 <View className="flex-row items-center justify-between pt-3 border-t border-white/20">
-                  <Text className="text-blue-100 text-sm">
+                  <Text className="text-primary-100 text-sm">
                     {remaining === 0 ? 'Fully Allocated' : remaining > 0 ? 'Left to Allocate' : 'Over Budget'}
                   </Text>
                   <Text
                     className={`text-xl font-bold ${
-                      remaining < 0 ? 'text-red-200' : remaining === 0 ? 'text-green-300' : 'text-white'
+                      remaining < 0 ? 'text-error-200' : remaining === 0 ? 'text-success-300' : 'text-white'
                     }`}
                   >
                     {formatCurrency(Math.abs(remaining))}
@@ -361,27 +795,172 @@ export default function BudgetScreen({ navigation }: any) {
               {categories.length === 0 ? (
                 <View className="items-center py-8">
                   <Ionicons name="folder-open-outline" size={64} color="#9ca3af" />
-                  <Text className="text-gray-600 mt-4 text-center mb-4">
+                  <Text className="text-text-secondary mt-4 text-center mb-4">
                     No budget categories yet. Add your first category to start budgeting!
                   </Text>
                   <TouchableOpacity
                     onPress={() => navigation.navigate('AddBudgetCategory', { budgetId: budget.id })}
-                    className="bg-blue-600 px-6 py-3 rounded-lg"
+                    className="bg-primary px-6 py-3 rounded-lg"
                   >
                     <Text className="text-white font-semibold">Add Category</Text>
                   </TouchableOpacity>
                 </View>
               ) : (
                 <>
-                  <CategorySection title="Income" categories={incomeCategories} icon="cash" />
-                  <CategorySection title="Expenses" categories={expenseCategories} icon="cart" />
-                  <CategorySection title="Savings" categories={savingsCategories} icon="wallet" />
+                  {groupNames.map((groupName) => (
+                    <CategorySection
+                      key={groupName}
+                      groupName={groupName}
+                      categories={groupedCategories[groupName]}
+                    />
+                  ))}
                 </>
               )}
             </View>
           )}
         </ScrollView>
       </View>
+
+      {/* Sort Modal */}
+      <Modal
+        visible={showSortModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowSortModal(false)}
+      >
+        <View className="flex-1 bg-black/50 justify-end">
+          <View className="bg-white rounded-t-3xl">
+            <View className="flex-row items-center justify-between px-6 py-4 border-b border-gray-200">
+              <Text className="text-lg font-bold text-gray-800">Sort Categories</Text>
+              <TouchableOpacity onPress={() => setShowSortModal(false)}>
+                <Ionicons name="close" size={24} color="#6b7280" />
+              </TouchableOpacity>
+            </View>
+
+            <View className="pb-6">
+              {/* By Group */}
+              <TouchableOpacity
+                onPress={() => {
+                  setSortOption('group');
+                  setShowSortModal(false);
+                }}
+                className={`px-6 py-4 border-b border-gray-100 flex-row items-center justify-between ${
+                  sortOption === 'group' ? 'bg-primary-50' : ''
+                }`}
+              >
+                <View className="flex-row items-center">
+                  <Ionicons
+                    name="albums"
+                    size={24}
+                    color={sortOption === 'group' ? '#FF6B35' : '#6b7280'}
+                  />
+                  <View className="ml-3">
+                    <Text className={`text-base ${sortOption === 'group' ? 'text-primary font-semibold' : 'text-gray-800'}`}>
+                      By Group
+                    </Text>
+                    <Text className="text-xs text-gray-500 mt-0.5">
+                      Organized by category groups
+                    </Text>
+                  </View>
+                </View>
+                {sortOption === 'group' && (
+                  <Ionicons name="checkmark-circle" size={24} color="#FF6B35" />
+                )}
+              </TouchableOpacity>
+
+              {/* Alphabetical */}
+              <TouchableOpacity
+                onPress={() => {
+                  setSortOption('alphabetical');
+                  setShowSortModal(false);
+                }}
+                className={`px-6 py-4 border-b border-gray-100 flex-row items-center justify-between ${
+                  sortOption === 'alphabetical' ? 'bg-primary-50' : ''
+                }`}
+              >
+                <View className="flex-row items-center">
+                  <Ionicons
+                    name="text"
+                    size={24}
+                    color={sortOption === 'alphabetical' ? '#FF6B35' : '#6b7280'}
+                  />
+                  <View className="ml-3">
+                    <Text className={`text-base ${sortOption === 'alphabetical' ? 'text-primary font-semibold' : 'text-gray-800'}`}>
+                      Alphabetical
+                    </Text>
+                    <Text className="text-xs text-gray-500 mt-0.5">
+                      Sort by name (A-Z)
+                    </Text>
+                  </View>
+                </View>
+                {sortOption === 'alphabetical' && (
+                  <Ionicons name="checkmark-circle" size={24} color="#FF6B35" />
+                )}
+              </TouchableOpacity>
+
+              {/* By Amount */}
+              <TouchableOpacity
+                onPress={() => {
+                  setSortOption('amount');
+                  setShowSortModal(false);
+                }}
+                className={`px-6 py-4 border-b border-gray-100 flex-row items-center justify-between ${
+                  sortOption === 'amount' ? 'bg-primary-50' : ''
+                }`}
+              >
+                <View className="flex-row items-center">
+                  <Ionicons
+                    name="cash"
+                    size={24}
+                    color={sortOption === 'amount' ? '#FF6B35' : '#6b7280'}
+                  />
+                  <View className="ml-3">
+                    <Text className={`text-base ${sortOption === 'amount' ? 'text-primary font-semibold' : 'text-gray-800'}`}>
+                      By Amount
+                    </Text>
+                    <Text className="text-xs text-gray-500 mt-0.5">
+                      Highest allocated amount first
+                    </Text>
+                  </View>
+                </View>
+                {sortOption === 'amount' && (
+                  <Ionicons name="checkmark-circle" size={24} color="#FF6B35" />
+                )}
+              </TouchableOpacity>
+
+              {/* By Spending % */}
+              <TouchableOpacity
+                onPress={() => {
+                  setSortOption('spending');
+                  setShowSortModal(false);
+                }}
+                className={`px-6 py-4 flex-row items-center justify-between ${
+                  sortOption === 'spending' ? 'bg-primary-50' : ''
+                }`}
+              >
+                <View className="flex-row items-center">
+                  <Ionicons
+                    name="stats-chart"
+                    size={24}
+                    color={sortOption === 'spending' ? '#FF6B35' : '#6b7280'}
+                  />
+                  <View className="ml-3">
+                    <Text className={`text-base ${sortOption === 'spending' ? 'text-primary font-semibold' : 'text-gray-800'}`}>
+                      By Spending %
+                    </Text>
+                    <Text className="text-xs text-gray-500 mt-0.5">
+                      Highest spending percentage first
+                    </Text>
+                  </View>
+                </View>
+                {sortOption === 'spending' && (
+                  <Ionicons name="checkmark-circle" size={24} color="#FF6B35" />
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }

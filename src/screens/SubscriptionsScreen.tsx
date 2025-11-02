@@ -249,22 +249,8 @@ export default function SubscriptionsScreen({ navigation }: any) {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-gray-50" edges={['top']}>
-      <View className="flex-1">
-        {/* Header */}
-        <View className="px-6 py-4 bg-white border-b border-gray-200">
-          <View className="flex-row justify-between items-center">
-            <Text className="text-2xl font-bold text-gray-800">Subscriptions</Text>
-            <TouchableOpacity
-              onPress={() => navigation.navigate('AddSubscription')}
-              className="bg-blue-600 px-4 py-2 rounded-lg"
-            >
-              <Text className="text-white font-semibold">Add</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        <ScrollView
+    <SafeAreaView className="flex-1 bg-gray-50" edges={['bottom']}>
+      <ScrollView
           className="flex-1"
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         >
@@ -324,7 +310,6 @@ export default function SubscriptionsScreen({ navigation }: any) {
             </View>
           )}
         </ScrollView>
-      </View>
     </SafeAreaView>
   );
 }

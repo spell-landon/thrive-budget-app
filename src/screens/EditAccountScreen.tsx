@@ -13,7 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
-import { getAccountById, updateAccount } from '../services/accounts';
+import { getAccountById, updateAccount, deleteAccount } from '../services/accounts';
 import { centsToInputValue, parseCurrencyInput, formatCurrencyInput } from '../utils/currency';
 
 type AccountType = 'checking' | 'savings' | 'credit_card' | 'investment' | 'loan';
@@ -28,6 +28,14 @@ export default function EditAccountScreen({ route, navigation }: any) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
+  // Store current account data
+  const [currentAccount, setCurrentAccount] = useState<{
+    id: string;
+    name: string;
+    type: AccountType;
+    balance: number;
+  } | null>(null);
+
   const accountTypes: { value: AccountType; label: string; icon: string }[] = [
     { value: 'checking', label: 'Checking', icon: 'card' },
     { value: 'savings', label: 'Savings', icon: 'wallet' },
@@ -40,6 +48,14 @@ export default function EditAccountScreen({ route, navigation }: any) {
     loadAccount();
   }, [accountId]);
 
+  // Pass submit handler to navigation params for header button
+  useEffect(() => {
+    navigation.setParams({
+      handleSubmit,
+      loading: saving,
+    });
+  }, [saving]);
+
   const loadAccount = async () => {
     try {
       const account = await getAccountById(accountId);
@@ -47,6 +63,14 @@ export default function EditAccountScreen({ route, navigation }: any) {
       setType(account.type);
       setBalance(centsToInputValue(account.balance));
       setInstitution(account.institution || '');
+
+      // Store current account data for allocation/deletion
+      setCurrentAccount({
+        id: account.id,
+        name: account.name,
+        type: account.type,
+        balance: account.balance,
+      });
     } catch (error: any) {
       Alert.alert('Error', error.message);
       navigation.goBack();
@@ -84,6 +108,44 @@ export default function EditAccountScreen({ route, navigation }: any) {
     }
   };
 
+  const handleDeleteAccount = () => {
+    if (!currentAccount) return;
+
+    Alert.alert(
+      'Delete Account',
+      `Are you sure you want to delete ${currentAccount.name}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteAccount(currentAccount.id);
+              Alert.alert('Success', 'Account deleted successfully!');
+              navigation.goBack();
+            } catch (error: any) {
+              Alert.alert('Error', error.message);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleAllocateBalance = () => {
+    if (!user || !currentAccount || currentAccount.balance <= 0) {
+      Alert.alert('Notice', 'This account has no balance to allocate.');
+      return;
+    }
+
+    navigation.navigate('AllocationPreview', {
+      accountId: currentAccount.id,
+      accountName: currentAccount.name,
+      accountBalance: currentAccount.balance,
+    });
+  };
+
   if (loading) {
     return (
       <SafeAreaView className="flex-1 bg-gray-50" edges={['top']}>
@@ -100,20 +162,6 @@ export default function EditAccountScreen({ route, navigation }: any) {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         className="flex-1"
       >
-        <View className="flex-row items-center justify-between px-6 py-4 bg-white border-b border-gray-200">
-          <View className="flex-row items-center">
-            <TouchableOpacity onPress={() => navigation.goBack()} className="mr-4">
-              <Ionicons name="arrow-back" size={24} color="#1f2937" />
-            </TouchableOpacity>
-            <Text className="text-xl font-bold text-gray-800">Edit Account</Text>
-          </View>
-          <TouchableOpacity onPress={handleSubmit} disabled={saving}>
-            <Text className={`text-base font-semibold ${saving ? 'text-gray-400' : 'text-blue-600'}`}>
-              {saving ? 'Saving...' : 'Save'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-
         <ScrollView className="flex-1">
           <View className="p-6">
             {/* Account Name */}
@@ -188,7 +236,7 @@ export default function EditAccountScreen({ route, navigation }: any) {
             </View>
 
             {/* Institution (Optional) */}
-            <View>
+            <View className="mb-4">
               <Text className="text-gray-700 font-semibold mb-2">Bank/Institution (Optional)</Text>
               <TextInput
                 className="border border-gray-300 rounded-lg px-4 py-3 bg-white"
@@ -197,6 +245,33 @@ export default function EditAccountScreen({ route, navigation }: any) {
                 placeholder="e.g., Chase Bank"
                 autoCapitalize="words"
               />
+            </View>
+
+            {/* Allocate Balance Button (only for checking/savings with balance) */}
+            {currentAccount &&
+             (currentAccount.type === 'checking' || currentAccount.type === 'savings') &&
+             currentAccount.balance > 0 && (
+              <TouchableOpacity
+                onPress={handleAllocateBalance}
+                className="bg-primary px-6 py-3 rounded-lg mb-4 flex-row items-center justify-center"
+              >
+                <Ionicons name="share-outline" size={20} color="white" />
+                <Text className="text-white font-semibold ml-2">Allocate Balance</Text>
+              </TouchableOpacity>
+            )}
+
+            {/* Delete Account Button */}
+            <View className="mt-2 pt-6 border-t border-gray-200">
+              <TouchableOpacity
+                onPress={handleDeleteAccount}
+                className="bg-error-500 px-6 py-3 rounded-lg flex-row items-center justify-center"
+              >
+                <Ionicons name="trash" size={20} color="white" />
+                <Text className="text-white font-semibold ml-2">Delete Account</Text>
+              </TouchableOpacity>
+              <Text className="text-xs text-gray-500 text-center mt-2">
+                This will permanently delete this account and cannot be undone
+              </Text>
             </View>
           </View>
         </ScrollView>

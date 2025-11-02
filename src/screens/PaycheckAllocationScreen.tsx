@@ -13,10 +13,24 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
-import { getPaycheckPlanById, getPaycheckAllocationsWithCategories, updateAllAllocations } from '../services/paychecks';
-import { getOrCreateCurrentMonthBudget, getBudgetCategories } from '../services/budgets';
-import { formatCurrency, centsToInputValue, parseCurrencyInput } from '../utils/currency';
-import { PaycheckPlan, BudgetCategory } from '../types';
+import {
+  getPaycheckPlanById,
+  getPaycheckAllocationsWithCategories,
+  getPaycheckGoalAllocationsWithGoals,
+  updateAllAllocations,
+  updateAllGoalAllocations,
+} from '../services/paychecks';
+import {
+  getOrCreateCurrentMonthBudget,
+  getBudgetCategories,
+} from '../services/budgets';
+import { getGoals } from '../services/goals';
+import {
+  formatCurrency,
+  centsToInputValue,
+  parseCurrencyInput,
+} from '../utils/currency';
+import { PaycheckPlan, BudgetCategory, SavingsGoal } from '../types';
 
 interface AllocationInput {
   categoryId: string;
@@ -25,18 +39,34 @@ interface AllocationInput {
   amount: string;
 }
 
+interface GoalAllocationInput {
+  goalId: string;
+  goalName: string;
+  amount: string;
+}
+
 export default function PaycheckAllocationScreen({ route, navigation }: any) {
   const { user } = useAuth();
   const { paycheckId } = route.params;
   const [paycheck, setPaycheck] = useState<PaycheckPlan | null>(null);
   const [categories, setCategories] = useState<BudgetCategory[]>([]);
+  const [goals, setGoals] = useState<SavingsGoal[]>([]);
   const [allocations, setAllocations] = useState<AllocationInput[]>([]);
+  const [goalAllocations, setGoalAllocations] = useState<GoalAllocationInput[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     loadData();
   }, [paycheckId]);
+
+  // Pass submit handler to navigation params for header button
+  useEffect(() => {
+    navigation.setParams({
+      handleSubmit: handleSave,
+      loading: saving,
+    });
+  }, [saving]);
 
   const loadData = async () => {
     if (!user) return;
@@ -50,15 +80,28 @@ export default function PaycheckAllocationScreen({ route, navigation }: any) {
       const budget = await getOrCreateCurrentMonthBudget(user.id);
       const categoriesData = await getBudgetCategories(budget.id);
       // Filter out income categories - you don't allocate paycheck TO income categories
-      const nonIncomeCategories = categoriesData.filter((c) => c.category_type !== 'income');
+      const nonIncomeCategories = categoriesData.filter(
+        (c) => c.category_type !== 'income'
+      );
       setCategories(nonIncomeCategories);
 
+      // Load savings goals
+      const goalsData = await getGoals(user.id);
+      setGoals(goalsData);
+
       // Load existing allocations
-      const existingAllocations = await getPaycheckAllocationsWithCategories(paycheckId);
+      const existingAllocations = await getPaycheckAllocationsWithCategories(
+        paycheckId
+      );
+      const existingGoalAllocations = await getPaycheckGoalAllocationsWithGoals(
+        paycheckId
+      );
 
       // Initialize allocation inputs
       const allocationInputs = categoriesData.map((cat) => {
-        const existing = existingAllocations.find((a) => a.category_id === cat.id);
+        const existing = existingAllocations.find(
+          (a) => a.category_id === cat.id
+        );
         return {
           categoryId: cat.id,
           categoryName: cat.name,
@@ -67,7 +110,20 @@ export default function PaycheckAllocationScreen({ route, navigation }: any) {
         };
       });
 
+      // Initialize goal allocation inputs
+      const goalAllocationInputs = goalsData.map((goal) => {
+        const existing = existingGoalAllocations.find(
+          (a) => a.goal_id === goal.id
+        );
+        return {
+          goalId: goal.id,
+          goalName: goal.name,
+          amount: existing ? centsToInputValue(existing.amount) : '',
+        };
+      });
+
       setAllocations(allocationInputs);
+      setGoalAllocations(goalAllocationInputs);
     } catch (error: any) {
       Alert.alert('Error', error.message);
       navigation.goBack();
@@ -78,12 +134,22 @@ export default function PaycheckAllocationScreen({ route, navigation }: any) {
 
   const updateAllocation = (categoryId: string, value: string) => {
     setAllocations((prev) =>
-      prev.map((a) => (a.categoryId === categoryId ? { ...a, amount: value } : a))
+      prev.map((a) =>
+        a.categoryId === categoryId ? { ...a, amount: value } : a
+      )
+    );
+  };
+
+  const updateGoalAllocation = (goalId: string, value: string) => {
+    setGoalAllocations((prev) =>
+      prev.map((a) =>
+        a.goalId === goalId ? { ...a, amount: value } : a
+      )
     );
   };
 
   const getTotalAllocated = () => {
-    return allocations.reduce((sum, alloc) => {
+    const categoryTotal = allocations.reduce((sum, alloc) => {
       if (!alloc.amount || alloc.amount.trim() === '') return sum;
       try {
         return sum + parseCurrencyInput(alloc.amount);
@@ -91,6 +157,17 @@ export default function PaycheckAllocationScreen({ route, navigation }: any) {
         return sum;
       }
     }, 0);
+
+    const goalTotal = goalAllocations.reduce((sum, alloc) => {
+      if (!alloc.amount || alloc.amount.trim() === '') return sum;
+      try {
+        return sum + parseCurrencyInput(alloc.amount);
+      } catch {
+        return sum;
+      }
+    }, 0);
+
+    return categoryTotal + goalTotal;
   };
 
   const getRemaining = () => {
@@ -118,7 +195,17 @@ export default function PaycheckAllocationScreen({ route, navigation }: any) {
           amount: parseCurrencyInput(a.amount),
         }));
 
-      await updateAllAllocations(paycheckId, allocationsToSave);
+      const goalAllocationsToSave = goalAllocations
+        .filter((a) => a.amount && a.amount.trim() !== '')
+        .map((a) => ({
+          goal_id: a.goalId,
+          amount: parseCurrencyInput(a.amount),
+        }));
+
+      await Promise.all([
+        updateAllAllocations(paycheckId, allocationsToSave),
+        updateAllGoalAllocations(paycheckId, goalAllocationsToSave),
+      ]);
 
       Alert.alert('Success', 'Allocations saved successfully!');
       navigation.goBack();
@@ -143,7 +230,11 @@ export default function PaycheckAllocationScreen({ route, navigation }: any) {
             const perCategory = Math.floor(paycheck.amount / categories.length);
             const newAllocations = allocations.map((a, index) => ({
               ...a,
-              amount: centsToInputValue(index === 0 ? perCategory + (paycheck.amount % categories.length) : perCategory),
+              amount: centsToInputValue(
+                index === 0
+                  ? perCategory + (paycheck.amount % categories.length)
+                  : perCategory
+              ),
             }));
             setAllocations(newAllocations);
           },
@@ -154,9 +245,9 @@ export default function PaycheckAllocationScreen({ route, navigation }: any) {
 
   if (loading) {
     return (
-      <SafeAreaView className="flex-1 bg-gray-50" edges={['top']}>
-        <View className="flex-1 items-center justify-center">
-          <ActivityIndicator size="large" color="#2563eb" />
+      <SafeAreaView className='flex-1 bg-gray-50' edges={['top']}>
+        <View className='flex-1 items-center justify-center'>
+          <ActivityIndicator size='large' color='#2563eb' />
         </View>
       </SafeAreaView>
     );
@@ -166,9 +257,15 @@ export default function PaycheckAllocationScreen({ route, navigation }: any) {
   const isOverAllocated = remaining < 0;
 
   // Group allocations by type
-  const incomeAllocations = allocations.filter((a) => a.categoryType === 'income');
-  const expenseAllocations = allocations.filter((a) => a.categoryType === 'expense');
-  const savingsAllocations = allocations.filter((a) => a.categoryType === 'savings');
+  const incomeAllocations = allocations.filter(
+    (a) => a.categoryType === 'income'
+  );
+  const expenseAllocations = allocations.filter(
+    (a) => a.categoryType === 'expense'
+  );
+  const savingsAllocations = allocations.filter(
+    (a) => a.categoryType === 'savings'
+  );
 
   const AllocationSection = ({
     title,
@@ -182,22 +279,30 @@ export default function PaycheckAllocationScreen({ route, navigation }: any) {
     if (items.length === 0) return null;
 
     return (
-      <View className="mb-4">
-        <View className="flex-row items-center mb-2 px-1">
-          <Ionicons name={icon as any} size={18} color="#2563eb" />
-          <Text className="text-base font-bold text-gray-800 ml-2">{title}</Text>
+      <View className='mb-4'>
+        <View className='flex-row items-center mb-2 px-1'>
+          <Ionicons name={icon as any} size={18} color='#2563eb' />
+          <Text className='text-base font-bold text-gray-800 ml-2'>
+            {title}
+          </Text>
         </View>
         {items.map((alloc) => (
-          <View key={alloc.categoryId} className="bg-white rounded-lg p-3 mb-2 shadow-sm border border-gray-100">
-            <Text className="text-sm font-semibold text-gray-800 mb-2">{alloc.categoryName}</Text>
-            <View className="flex-row items-center border border-gray-300 rounded-lg bg-gray-50">
-              <Text className="text-gray-500 text-base px-3">$</Text>
+          <View
+            key={alloc.categoryId}
+            className='bg-white rounded-lg p-3 mb-2 shadow-sm border border-gray-100'>
+            <Text className='text-sm font-semibold text-gray-800 mb-2'>
+              {alloc.categoryName}
+            </Text>
+            <View className='flex-row items-center border border-gray-300 rounded-lg bg-gray-50'>
+              <Text className='text-gray-500 text-base px-3'>$</Text>
               <TextInput
-                className="flex-1 py-2 pr-3"
+                className='flex-1 py-2 pr-3'
                 value={alloc.amount}
-                onChangeText={(value) => updateAllocation(alloc.categoryId, value)}
-                placeholder="0.00"
-                keyboardType="decimal-pad"
+                onChangeText={(value) =>
+                  updateAllocation(alloc.categoryId, value)
+                }
+                placeholder='0.00'
+                keyboardType='decimal-pad'
               />
             </View>
           </View>
@@ -207,47 +312,42 @@ export default function PaycheckAllocationScreen({ route, navigation }: any) {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-gray-50" edges={['top']}>
+    <SafeAreaView className='flex-1 bg-gray-50' edges={[]}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        className="flex-1"
-      >
-        {/* Header */}
-        <View className="flex-row items-center px-6 py-4 bg-white border-b border-gray-200">
-          <TouchableOpacity onPress={() => navigation.goBack()} className="mr-4">
-            <Ionicons name="arrow-back" size={24} color="#1f2937" />
-          </TouchableOpacity>
-          <Text className="text-xl font-bold text-gray-800 flex-1">Allocate Paycheck</Text>
-          <TouchableOpacity onPress={handleAutoAllocate} className="ml-2">
-            <Ionicons name="sparkles-outline" size={22} color="#2563eb" />
-          </TouchableOpacity>
-        </View>
-
-        <ScrollView className="flex-1">
-          <View className="p-4">
+        className='flex-1'>
+        <ScrollView className='flex-1'>
+          <View className='p-4'>
             {/* Paycheck Summary */}
-            <View className="bg-blue-600 rounded-2xl p-5 mb-4 shadow-lg">
-              <Text className="text-blue-100 text-xs uppercase font-semibold tracking-wide mb-1">
+            <View className='bg-blue-600 rounded-2xl p-5 mb-4 shadow-lg'>
+              <Text className='text-blue-100 text-xs uppercase font-semibold tracking-wide mb-1'>
                 {paycheck?.name}
               </Text>
-              <Text className="text-white text-3xl font-bold mb-1">
+              <Text className='text-white text-3xl font-bold mb-1'>
                 {formatCurrency(paycheck?.amount || 0)}
               </Text>
-              <Text className="text-blue-100 text-xs">
+              <Text className='text-blue-100 text-xs'>
                 {paycheck?.frequency.charAt(0).toUpperCase()}
                 {paycheck?.frequency.slice(1)} paycheck
               </Text>
 
               {/* Remaining */}
-              <View className="flex-row items-center justify-between pt-3 mt-3 border-t border-white/20">
-                <Text className="text-blue-100 text-sm">
-                  {remaining === 0 ? 'Fully Allocated' : remaining > 0 ? 'Remaining' : 'Over Allocated'}
+              <View className='flex-row items-center justify-between pt-3 mt-3 border-t border-white/20'>
+                <Text className='text-blue-100 text-sm'>
+                  {remaining === 0
+                    ? 'Fully Allocated'
+                    : remaining > 0
+                    ? 'Remaining'
+                    : 'Over Allocated'}
                 </Text>
                 <Text
                   className={`text-xl font-bold ${
-                    isOverAllocated ? 'text-red-200' : remaining === 0 ? 'text-green-300' : 'text-white'
-                  }`}
-                >
+                    isOverAllocated
+                      ? 'text-red-200'
+                      : remaining === 0
+                      ? 'text-green-300'
+                      : 'text-white'
+                  }`}>
                   {formatCurrency(Math.abs(remaining))}
                 </Text>
               </View>
@@ -255,23 +355,68 @@ export default function PaycheckAllocationScreen({ route, navigation }: any) {
 
             {/* No Categories State */}
             {categories.length === 0 ? (
-              <View className="items-center py-8">
-                <Ionicons name="folder-open-outline" size={64} color="#9ca3af" />
-                <Text className="text-gray-600 mt-4 text-center mb-4">
-                  No budget categories yet. Create categories in your budget first.
+              <View className='items-center py-8'>
+                <Ionicons
+                  name='folder-open-outline'
+                  size={64}
+                  color='#9ca3af'
+                />
+                <Text className='text-gray-600 mt-4 text-center mb-4'>
+                  No budget categories yet. Create categories in your budget
+                  first.
                 </Text>
                 <TouchableOpacity
-                  onPress={() => navigation.navigate('Budget')}
-                  className="bg-blue-600 px-6 py-3 rounded-lg"
-                >
-                  <Text className="text-white font-semibold">Go to Budget</Text>
+                  onPress={() => navigation.navigate('Main', { screen: 'Budget' })}
+                  className='bg-blue-600 px-6 py-3 rounded-lg'>
+                  <Text className='text-white font-semibold'>Go to Budget</Text>
                 </TouchableOpacity>
               </View>
             ) : (
               <>
                 {/* Allocations by Category Type */}
-                <AllocationSection title="Expenses" items={expenseAllocations} icon="cart" />
-                <AllocationSection title="Savings" items={savingsAllocations} icon="wallet" />
+                <AllocationSection
+                  title='Expenses'
+                  items={expenseAllocations}
+                  icon='cart'
+                />
+                <AllocationSection
+                  title='Savings'
+                  items={savingsAllocations}
+                  icon='wallet'
+                />
+
+                {/* Goals Section */}
+                {goals.length > 0 && (
+                  <View className='mb-4'>
+                    <View className='flex-row items-center mb-2 px-1'>
+                      <Ionicons name='flag' size={18} color='#2563eb' />
+                      <Text className='text-base font-bold text-gray-800 ml-2'>
+                        Goals
+                      </Text>
+                    </View>
+                    {goalAllocations.map((alloc) => (
+                      <View
+                        key={alloc.goalId}
+                        className='bg-white rounded-lg p-3 mb-2 shadow-sm border border-gray-100'>
+                        <Text className='text-sm font-semibold text-gray-800 mb-2'>
+                          {alloc.goalName}
+                        </Text>
+                        <View className='flex-row items-center border border-gray-300 rounded-lg bg-gray-50'>
+                          <Text className='text-gray-500 text-base px-3'>$</Text>
+                          <TextInput
+                            className='flex-1 py-2 pr-3'
+                            value={alloc.amount}
+                            onChangeText={(value) =>
+                              updateGoalAllocation(alloc.goalId, value)
+                            }
+                            placeholder='0.00'
+                            keyboardType='decimal-pad'
+                          />
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                )}
 
                 {/* Save Button */}
                 <TouchableOpacity
@@ -279,15 +424,14 @@ export default function PaycheckAllocationScreen({ route, navigation }: any) {
                   disabled={saving || isOverAllocated}
                   className={`rounded-lg py-4 mt-2 ${
                     saving || isOverAllocated ? 'bg-blue-400' : 'bg-blue-600'
-                  }`}
-                >
-                  <Text className="text-white text-center font-semibold text-lg">
+                  }`}>
+                  <Text className='text-white text-center font-semibold text-lg'>
                     {saving ? 'Saving...' : 'Save Allocations'}
                   </Text>
                 </TouchableOpacity>
 
                 {isOverAllocated && (
-                  <Text className="text-red-600 text-sm text-center mt-2">
+                  <Text className='text-red-600 text-sm text-center mt-2'>
                     Reduce allocations to save
                   </Text>
                 )}

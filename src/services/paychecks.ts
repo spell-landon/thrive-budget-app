@@ -1,7 +1,8 @@
 import { supabase } from './supabase';
-import { PaycheckPlan, PaycheckAllocation } from '../types';
+import { PaycheckPlan, PaycheckAllocation, PaycheckGoalAllocation } from '../types';
 import { createTransaction } from './transactions';
 import { getCategoryById, updateBudgetCategory } from './budgets';
+import { getGoal, updateGoal } from './goals';
 
 // ==================== PAYCHECK PLANS ====================
 
@@ -226,6 +227,72 @@ export async function getPaycheckAllocationsWithCategories(planId: string): Prom
   return data || [];
 }
 
+// ==================== PAYCHECK GOAL ALLOCATIONS ====================
+
+// Get all goal allocations for a paycheck plan
+export async function getPaycheckGoalAllocations(planId: string): Promise<PaycheckGoalAllocation[]> {
+  const { data, error } = await supabase
+    .from('paycheck_goal_allocations')
+    .select('*')
+    .eq('paycheck_plan_id', planId)
+    .order('created_at', { ascending: true });
+
+  if (error) throw error;
+  return data || [];
+}
+
+// Get goal allocations with goal details
+export async function getPaycheckGoalAllocationsWithGoals(planId: string): Promise<
+  Array<
+    PaycheckGoalAllocation & {
+      goal: { id: string; name: string; target_amount: number; current_amount: number };
+    }
+  >
+> {
+  const { data, error } = await supabase
+    .from('paycheck_goal_allocations')
+    .select(
+      `
+      *,
+      goal:savings_goals(id, name, target_amount, current_amount)
+    `
+    )
+    .eq('paycheck_plan_id', planId)
+    .order('created_at', { ascending: true });
+
+  if (error) throw error;
+  return data || [];
+}
+
+// Batch update goal allocations (delete old ones and create new ones)
+export async function updateAllGoalAllocations(
+  planId: string,
+  allocations: { goal_id: string; amount: number }[]
+): Promise<void> {
+  // Delete existing goal allocations
+  const { error: deleteError } = await supabase
+    .from('paycheck_goal_allocations')
+    .delete()
+    .eq('paycheck_plan_id', planId);
+
+  if (deleteError) throw deleteError;
+
+  // Create new allocations
+  if (allocations.length > 0) {
+    const newAllocations = allocations.map((alloc) => ({
+      paycheck_plan_id: planId,
+      goal_id: alloc.goal_id,
+      amount: alloc.amount,
+    }));
+
+    const { error: insertError } = await supabase
+      .from('paycheck_goal_allocations')
+      .insert(newAllocations);
+
+    if (insertError) throw insertError;
+  }
+}
+
 // ==================== PAYCHECK PROCESSING ====================
 
 // Process due paychecks (create transactions and update budgets)
@@ -259,6 +326,7 @@ export async function processDuePaychecks(userId: string): Promise<number> {
     try {
       // Get allocations for this paycheck
       const allocations = await getPaycheckAllocations(paycheck.id);
+      const goalAllocations = await getPaycheckGoalAllocations(paycheck.id);
 
       // Create income transaction if we have a default account
       if (defaultAccount) {
@@ -275,9 +343,19 @@ export async function processDuePaychecks(userId: string): Promise<number> {
       for (const allocation of allocations) {
         const category = await getCategoryById(allocation.category_id);
 
-        // Add allocation amount to spent_amount
+        // Add allocation amount to available_amount (this is money being added to the bucket)
         await updateBudgetCategory(allocation.category_id, {
-          spent_amount: category.spent_amount + allocation.amount,
+          available_amount: category.available_amount + allocation.amount,
+        });
+      }
+
+      // Update savings goals with allocated amounts
+      for (const goalAllocation of goalAllocations) {
+        const goal = await getGoal(goalAllocation.goal_id);
+
+        // Add allocation amount to goal's current_amount
+        await updateGoal(goalAllocation.goal_id, {
+          current_amount: goal.current_amount + goalAllocation.amount,
         });
       }
 

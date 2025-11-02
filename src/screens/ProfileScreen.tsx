@@ -66,18 +66,24 @@ export default function ProfileScreen() {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-gray-50" edges={['top']}>
+    <SafeAreaView className="flex-1 bg-background" edges={['bottom']}>
       <ScrollView className="flex-1">
         <View className="p-6">
-          <Text className="text-2xl font-bold text-gray-800 mb-6">Profile</Text>
-
           {/* User Info Card */}
-          <View className="bg-white rounded-xl p-6 mb-4 shadow-sm">
+          <View className="bg-card rounded-xl p-6 mb-4"
+            style={{
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 1 },
+              shadowOpacity: 0.05,
+              shadowRadius: 2,
+              elevation: 1,
+            }}
+          >
             <View className="items-center mb-6">
-              <View className="w-20 h-20 bg-blue-100 rounded-full items-center justify-center mb-3">
-                <Ionicons name="person" size={40} color="#2563eb" />
+              <View className="w-20 h-20 bg-primary-100 rounded-full items-center justify-center mb-3">
+                <Ionicons name="person" size={40} color="#FF6B35" />
               </View>
-              <Text className="text-lg font-semibold text-gray-800">
+              <Text className="text-lg font-semibold text-text-primary">
                 {user?.email}
               </Text>
             </View>
@@ -87,7 +93,7 @@ export default function ProfileScreen() {
               <TouchableOpacity className="flex-row items-center justify-between py-3">
                 <View className="flex-row items-center">
                   <Ionicons name="person-outline" size={22} color="#6b7280" />
-                  <Text className="text-gray-700 ml-3 text-base">Account Settings</Text>
+                  <Text className="text-text-secondary ml-3 text-base">Account Settings</Text>
                 </View>
                 <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
               </TouchableOpacity>
@@ -95,7 +101,7 @@ export default function ProfileScreen() {
               <TouchableOpacity className="flex-row items-center justify-between py-3">
                 <View className="flex-row items-center">
                   <Ionicons name="notifications-outline" size={22} color="#6b7280" />
-                  <Text className="text-gray-700 ml-3 text-base">Notifications</Text>
+                  <Text className="text-text-secondary ml-3 text-base">Notifications</Text>
                 </View>
                 <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
               </TouchableOpacity>
@@ -103,7 +109,7 @@ export default function ProfileScreen() {
               <TouchableOpacity className="flex-row items-center justify-between py-3">
                 <View className="flex-row items-center">
                   <Ionicons name="shield-outline" size={22} color="#6b7280" />
-                  <Text className="text-gray-700 ml-3 text-base">Privacy & Security</Text>
+                  <Text className="text-text-secondary ml-3 text-base">Privacy & Security</Text>
                 </View>
                 <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
               </TouchableOpacity>
@@ -111,11 +117,19 @@ export default function ProfileScreen() {
           </View>
 
           {/* App Info */}
-          <View className="bg-white rounded-xl p-6 mb-4 shadow-sm">
+          <View className="bg-card rounded-xl p-6 mb-4"
+            style={{
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 1 },
+              shadowOpacity: 0.05,
+              shadowRadius: 2,
+              elevation: 1,
+            }}
+          >
             <TouchableOpacity className="flex-row items-center justify-between py-3">
               <View className="flex-row items-center">
                 <Ionicons name="help-circle-outline" size={22} color="#6b7280" />
-                <Text className="text-gray-700 ml-3 text-base">Help & Support</Text>
+                <Text className="text-text-secondary ml-3 text-base">Help & Support</Text>
               </View>
               <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
             </TouchableOpacity>
@@ -123,7 +137,7 @@ export default function ProfileScreen() {
             <TouchableOpacity className="flex-row items-center justify-between py-3">
               <View className="flex-row items-center">
                 <Ionicons name="information-circle-outline" size={22} color="#6b7280" />
-                <Text className="text-gray-700 ml-3 text-base">About Thrive</Text>
+                <Text className="text-text-secondary ml-3 text-base">About Thrive</Text>
               </View>
               <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
             </TouchableOpacity>

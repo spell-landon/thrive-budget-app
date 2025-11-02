@@ -9,6 +9,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -31,6 +32,14 @@ export default function EditPaycheckScreen({ route, navigation }: any) {
   useEffect(() => {
     loadPaycheck();
   }, [paycheckId]);
+
+  // Pass submit handler to navigation params for header button
+  useEffect(() => {
+    navigation.setParams({
+      handleSubmit,
+      loading: saving,
+    });
+  }, [saving]);
 
   const loadPaycheck = async () => {
     try {
@@ -122,21 +131,6 @@ export default function EditPaycheckScreen({ route, navigation }: any) {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         className="flex-1"
       >
-        {/* Header */}
-        <View className="flex-row items-center justify-between px-6 py-4 bg-white border-b border-gray-200">
-          <View className="flex-row items-center">
-            <TouchableOpacity onPress={() => navigation.goBack()} className="mr-4">
-              <Ionicons name="arrow-back" size={24} color="#1f2937" />
-            </TouchableOpacity>
-            <Text className="text-xl font-bold text-gray-800">Edit Paycheck</Text>
-          </View>
-          <TouchableOpacity onPress={handleSubmit} disabled={saving}>
-            <Text className={`text-base font-semibold ${saving ? 'text-gray-400' : 'text-blue-600'}`}>
-              {saving ? 'Saving...' : 'Save'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-
         <ScrollView className="flex-1">
           <View className="p-6">
             {/* Paycheck Name */}
@@ -236,19 +230,59 @@ export default function EditPaycheckScreen({ route, navigation }: any) {
           </View>
         </ScrollView>
 
-        {/* Date Picker Modal */}
-        {showDatePicker && (
+        {/* Date Picker */}
+        {showDatePicker && Platform.OS === 'android' && (
           <DateTimePicker
             value={nextDate}
             mode="date"
-            display="default"
+            display="calendar"
             onChange={(event, selectedDate) => {
-              setShowDatePicker(Platform.OS === 'ios');
-              if (selectedDate) {
+              setShowDatePicker(false);
+              if (event.type === 'set' && selectedDate) {
                 setNextDate(selectedDate);
               }
             }}
           />
+        )}
+
+        {/* Date Picker Modal for iOS */}
+        {Platform.OS === 'ios' && (
+          <Modal
+            visible={showDatePicker}
+            transparent
+            animationType="slide"
+            onRequestClose={() => setShowDatePicker(false)}>
+            <View className="flex-1 bg-black/50 justify-end">
+              <View className="bg-white rounded-t-3xl pb-8">
+                <View className="flex-row items-center justify-between px-6 py-4 border-b border-gray-200">
+                  <TouchableOpacity onPress={() => setShowDatePicker(false)}>
+                    <Text className="text-base font-semibold text-gray-600">
+                      Cancel
+                    </Text>
+                  </TouchableOpacity>
+                  <Text className="text-lg font-bold text-gray-800">
+                    Select Date
+                  </Text>
+                  <TouchableOpacity onPress={() => setShowDatePicker(false)}>
+                    <Text className="text-base font-semibold text-blue-600">
+                      Done
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+                <DateTimePicker
+                  value={nextDate}
+                  mode="date"
+                  display="inline"
+                  style={{ marginLeft: 'auto', marginRight: 'auto' }}
+                  onChange={(event, selectedDate) => {
+                    if (selectedDate) {
+                      setNextDate(selectedDate);
+                    }
+                  }}
+                />
+              </View>
+            </View>
+          </Modal>
         )}
       </KeyboardAvoidingView>
     </SafeAreaView>

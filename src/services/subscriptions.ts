@@ -44,6 +44,7 @@ export async function createSubscription(
         next_billing_date: subscription.next_billing_date,
         reminder_days_before: subscription.reminder_days_before,
         auto_pay: subscription.auto_pay,
+        auto_populate_budget: subscription.auto_populate_budget,
         notes: subscription.notes,
       },
     ])
