@@ -24,10 +24,11 @@ import {
   createSubscription,
   calculateNextBillingDate,
 } from '../services/subscriptions';
+import { getIncomeSources, applyIncomeTemplate } from '../services/incomeTemplates';
 import { parseCurrencyInput, formatCurrencyInput } from '../utils/currency';
 import { formatDateToLocalString } from '../utils/date';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { Account, BudgetCategory } from '../types';
+import { Account, BudgetCategory, IncomeSource } from '../types';
 
 type TransactionType = 'income' | 'expense';
 
@@ -35,8 +36,10 @@ export default function AddTransactionScreen({ navigation }: any) {
   const { user } = useAuth();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [categories, setCategories] = useState<BudgetCategory[]>([]);
+  const [incomeSources, setIncomeSources] = useState<IncomeSource[]>([]);
   const [selectedAccountId, setSelectedAccountId] = useState<string>('');
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
+  const [selectedIncomeSourceId, setSelectedIncomeSourceId] = useState<string>('');
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
   const [type, setType] = useState<TransactionType>('expense');
@@ -53,6 +56,7 @@ export default function AddTransactionScreen({ navigation }: any) {
   useEffect(() => {
     loadAccounts();
     loadCategories();
+    loadIncomeSources();
   }, []);
 
   // Pass the submit handler to navigation params for the header button
@@ -62,7 +66,7 @@ export default function AddTransactionScreen({ navigation }: any) {
       loading,
       hasAccounts: accounts.length > 0,
     });
-  }, [loading, accounts.length, amount, description, selectedAccountId, type, date, isSubscription, subscriptionFrequency, selectedCategoryId]);
+  }, [loading, accounts.length, amount, description, selectedAccountId, type, date, isSubscription, subscriptionFrequency, selectedCategoryId, selectedIncomeSourceId]);
 
   const loadAccounts = async () => {
     if (!user) return;
@@ -96,6 +100,18 @@ export default function AddTransactionScreen({ navigation }: any) {
       // Don't show error alert, categories are optional
     } finally {
       setLoadingCategories(false);
+    }
+  };
+
+  const loadIncomeSources = async () => {
+    if (!user) return;
+
+    try {
+      const data = await getIncomeSources(user.id);
+      setIncomeSources(data.filter(s => s.is_active));
+    } catch (error: any) {
+      console.error('Error loading income sources:', error);
+      // Don't show error alert, income sources are optional
     }
   };
 
@@ -156,16 +172,35 @@ export default function AddTransactionScreen({ navigation }: any) {
         subscription_id: subscriptionId,
       });
 
-      const successMessage = isSubscription
-        ? 'Transaction and subscription added successfully!'
-        : 'Transaction added successfully!';
+      // If income transaction with a template, apply the template
+      if (type === 'income' && selectedIncomeSourceId) {
+        try {
+          const budget = await getOrCreateCurrentMonthBudget(user.id);
+          await applyIncomeTemplate(user.id, budget.id, selectedIncomeSourceId, amountInCents);
+          Alert.alert(
+            'Success',
+            'Income added and template applied! Money has been assigned to your categories.'
+          );
+        } catch (error: any) {
+          // Transaction was created successfully, just template application failed
+          console.error('Error applying income template:', error);
+          Alert.alert(
+            'Partial Success',
+            'Transaction added, but template application failed: ' + error.message
+          );
+        }
+      } else {
+        const successMessage = isSubscription
+          ? 'Transaction and subscription added successfully!'
+          : 'Transaction added successfully!';
+        Alert.alert('Success', successMessage);
+      }
 
-      Alert.alert('Success', successMessage);
       navigation.goBack();
+      // Don't reset loading state when navigating away - the screen is unmounting
     } catch (error: any) {
       Alert.alert('Error', error.message);
-    } finally {
-      setLoading(false);
+      setLoading(false); // Only reset loading if we're staying on the screen
     }
   };
 
@@ -278,6 +313,60 @@ export default function AddTransactionScreen({ navigation }: any) {
               )}
             </View>
 
+            {/* Income Source Selection (Only for Income) */}
+            {type === 'income' && (
+              <View className='mb-4'>
+                <Text className='text-gray-700 font-semibold mb-2'>
+                  Income Source (Optional)
+                </Text>
+                {incomeSources.length === 0 ? (
+                  <View className='bg-blue-50 border border-blue-300 rounded-lg p-4'>
+                    <Text className='text-blue-800 text-sm mb-2'>
+                      Create income sources in the More menu to automatically distribute income
+                      to categories!
+                    </Text>
+                  </View>
+                ) : (
+                  <>
+                    <TouchableOpacity
+                      onPress={() =>
+                        navigation.navigate('SelectIncomeSource', {
+                          selectedSourceId: selectedIncomeSourceId,
+                          onSelect: (sourceId: string | null) =>
+                            setSelectedIncomeSourceId(sourceId || ''),
+                        })
+                      }
+                      className='border border-gray-300 rounded-lg px-4 py-3 bg-white flex-row items-center justify-between'>
+                      <View className='flex-row items-center flex-1'>
+                        {selectedIncomeSourceId ? (
+                          <>
+                            <Ionicons
+                              name='cash-outline'
+                              size={20}
+                              color='#FF6B35'
+                            />
+                            <Text className='ml-2 text-gray-800'>
+                              {
+                                incomeSources.find(
+                                  (s) => s.id === selectedIncomeSourceId
+                                )?.name
+                              }
+                            </Text>
+                          </>
+                        ) : (
+                          <Text className='text-gray-400'>No source (manual)</Text>
+                        )}
+                      </View>
+                      <Ionicons name='chevron-down' size={20} color='#9ca3af' />
+                    </TouchableOpacity>
+                    <Text className='text-xs text-gray-500 mt-2'>
+                      Select a source to automatically apply allocation templates
+                    </Text>
+                  </>
+                )}
+              </View>
+            )}
+
             {/* Category Selection (Only for Expenses) */}
             {type === 'expense' && (
               <View className='mb-4'>
@@ -293,7 +382,13 @@ export default function AddTransactionScreen({ navigation }: any) {
                       budget to track spending!
                     </Text>
                     <TouchableOpacity
-                      onPress={() => navigation.navigate('Budget')}
+                      onPress={() => {
+                        navigation.goBack();
+                        // Small delay to ensure modal is closed before navigation
+                        setTimeout(() => {
+                          navigation.navigate('Main', { screen: 'Budget' });
+                        }, 100);
+                      }}
                       className='bg-blue-600 px-4 py-2 rounded-lg'>
                       <Text className='text-white font-semibold text-center text-sm'>
                         Go to Budget

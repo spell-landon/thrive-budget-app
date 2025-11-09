@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -19,14 +19,12 @@ import { getCategoryById, updateBudgetCategory, deleteBudgetCategory } from '../
 import { centsToInputValue, parseCurrencyInput, formatCurrencyInput } from '../utils/currency';
 import { formatDateToLocalString, parseDateString } from '../utils/date';
 
-type CategoryType = 'income' | 'expense' | 'savings';
-
 export default function EditBudgetCategoryScreen({ route, navigation }: any) {
   const { categoryId, budgetId } = route.params;
   const { user } = useAuth();
   const [name, setName] = useState('');
-  const [type, setType] = useState<CategoryType>('expense');
   const [allocatedAmount, setAllocatedAmount] = useState('');
+  const [availableAmount, setAvailableAmount] = useState('');
   const [categoryGroup, setCategoryGroup] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
@@ -37,20 +35,13 @@ export default function EditBudgetCategoryScreen({ route, navigation }: any) {
     loadCategory();
   }, [categoryId]);
 
-  // Pass submit handler to navigation params for header button
-  useEffect(() => {
-    navigation.setParams({
-      handleSubmit,
-      loading,
-    });
-  }, [loading]);
-
   const loadCategory = async () => {
     try {
       const category = await getCategoryById(categoryId);
       setName(category.name);
-      setType(category.category_type);
+      // Category type is always 'expense' now
       setAllocatedAmount(centsToInputValue(category.allocated_amount));
+      setAvailableAmount(centsToInputValue(category.available_amount));
       setCategoryGroup(category.category_group || null);
       setDueDate(category.due_date ? parseDateString(category.due_date) : null);
     } catch (error: any) {
@@ -61,13 +52,7 @@ export default function EditBudgetCategoryScreen({ route, navigation }: any) {
     }
   };
 
-  const categoryTypes: { value: CategoryType; label: string; icon: string; color: string }[] = [
-    { value: 'income', label: 'Income', icon: 'cash', color: 'green' },
-    { value: 'expense', label: 'Expense', icon: 'cart', color: 'red' },
-    { value: 'savings', label: 'Savings', icon: 'wallet', color: 'blue' },
-  ];
-
-  const handleSubmit = async () => {
+  const handleSubmit = useCallback(async () => {
     if (!name.trim()) {
       Alert.alert('Error', 'Please enter a category name');
       return;
@@ -78,27 +63,42 @@ export default function EditBudgetCategoryScreen({ route, navigation }: any) {
       return;
     }
 
+    if (!availableAmount.trim()) {
+      Alert.alert('Error', 'Please enter an available amount');
+      return;
+    }
+
     setLoading(true);
 
     try {
-      const amountInCents = parseCurrencyInput(allocatedAmount);
+      const allocatedInCents = parseCurrencyInput(allocatedAmount);
+      const availableInCents = parseCurrencyInput(availableAmount);
 
       await updateBudgetCategory(categoryId, {
         name: name.trim(),
-        category_type: type,
-        allocated_amount: amountInCents,
+        category_type: 'expense', // All categories are expense type now
+        allocated_amount: allocatedInCents,
+        available_amount: availableInCents,
         category_group: categoryGroup || undefined,
         due_date: dueDate ? formatDateToLocalString(dueDate) : undefined,
       });
 
       Alert.alert('Success', 'Category updated successfully!');
       navigation.goBack();
+      // Don't reset loading state when navigating away - the screen is unmounting
     } catch (error: any) {
       Alert.alert('Error', error.message);
-    } finally {
-      setLoading(false);
+      setLoading(false); // Only reset loading if we're staying on the screen
     }
-  };
+  }, [name, allocatedAmount, availableAmount, categoryGroup, dueDate, categoryId, navigation]);
+
+  // Pass submit handler to navigation params for header button
+  useEffect(() => {
+    navigation.setParams({
+      handleSubmit,
+      loading,
+    });
+  }, [loading, handleSubmit, navigation]);
 
   const handleDelete = () => {
     Alert.alert(
@@ -141,54 +141,6 @@ export default function EditBudgetCategoryScreen({ route, navigation }: any) {
       >
         <ScrollView className="flex-1">
           <View className="p-6">
-            {/* Category Type */}
-            <View className="mb-4">
-              <Text className="text-gray-700 font-semibold mb-2">Type *</Text>
-              <View className="flex-row gap-2">
-                {categoryTypes.map((categoryType) => (
-                  <TouchableOpacity
-                    key={categoryType.value}
-                    onPress={() => setType(categoryType.value)}
-                    className={`flex-1 flex-row items-center justify-center px-4 py-3 rounded-lg border ${
-                      type === categoryType.value
-                        ? `bg-${categoryType.color}-100 border-${categoryType.color}-500`
-                        : 'bg-white border-gray-300'
-                    }`}
-                  >
-                    <Ionicons
-                      name={categoryType.icon as any}
-                      size={20}
-                      color={
-                        type === categoryType.value
-                          ? categoryType.color === 'green'
-                            ? '#16a34a'
-                            : categoryType.color === 'red'
-                            ? '#dc2626'
-                            : '#2563eb'
-                          : '#6b7280'
-                      }
-                    />
-                    <Text
-                      className={`ml-2 text-sm ${
-                        type === categoryType.value
-                          ? `text-${categoryType.color}-700 font-semibold`
-                          : 'text-gray-700'
-                      }`}
-                    >
-                      {categoryType.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-              <Text className="text-xs text-gray-500 mt-2">
-                {type === 'income'
-                  ? 'Money coming in (e.g., Salary, Side Income)'
-                  : type === 'expense'
-                  ? 'Money going out (e.g., Groceries, Rent, Utilities)'
-                  : 'Money set aside for future goals (e.g., Emergency Fund, Vacation)'}
-              </Text>
-            </View>
-
             {/* Category Group */}
             <View className="mb-4">
               <Text className="text-gray-700 font-semibold mb-2">Category Group (Optional)</Text>
@@ -196,7 +148,7 @@ export default function EditBudgetCategoryScreen({ route, navigation }: any) {
                 onPress={() =>
                   navigation.navigate('SelectCategoryGroup', {
                     selectedCategoryGroup: categoryGroup,
-                    categoryType: type,
+                    categoryType: 'expense',
                     onSelect: (groupName: string | null) => setCategoryGroup(groupName),
                   })
                 }
@@ -219,11 +171,7 @@ export default function EditBudgetCategoryScreen({ route, navigation }: any) {
                 <Ionicons name="chevron-down" size={20} color="#9ca3af" />
               </TouchableOpacity>
               <Text className="text-xs text-gray-500 mt-1">
-                {type === 'income'
-                  ? 'Group income sources (e.g., "Salary", "Side Income")'
-                  : type === 'expense'
-                  ? 'Group expenses by category (e.g., "Housing", "Food & Dining")'
-                  : 'Group savings by purpose (e.g., "Emergency Fund", "Goals")'}
+                Group expenses by category (e.g., "Housing", "Food & Dining")
               </Text>
             </View>
 
@@ -234,22 +182,16 @@ export default function EditBudgetCategoryScreen({ route, navigation }: any) {
                 className="border border-gray-300 rounded-lg px-4 py-3 bg-white"
                 value={name}
                 onChangeText={setName}
-                placeholder={
-                  type === 'income'
-                    ? 'e.g., Salary'
-                    : type === 'expense'
-                    ? 'e.g., Groceries'
-                    : 'e.g., Emergency Fund'
-                }
+                placeholder='e.g., Groceries'
                 autoCapitalize="words"
                 textAlignVertical="center"
               />
             </View>
 
             {/* Allocated Amount */}
-            <View>
+            <View className="mb-4">
               <Text className="text-gray-700 font-semibold mb-2">
-                {type === 'income' ? 'Expected Amount *' : 'Allocated Amount *'}
+                Allocated Amount *
               </Text>
               <View className="flex-row items-center border border-gray-300 rounded-lg bg-white">
                 <Text className="text-gray-500 text-lg px-4">$</Text>
@@ -267,51 +209,70 @@ export default function EditBudgetCategoryScreen({ route, navigation }: any) {
                 />
               </View>
               <Text className="text-xs text-gray-500 mt-1">
-                {type === 'income'
-                  ? 'How much income do you expect?'
-                  : type === 'expense'
-                  ? 'How much do you plan to spend?'
-                  : 'How much do you want to save?'}
+                How much do you plan to spend? (Your monthly target)
               </Text>
             </View>
 
-            {/* Due Date (for expenses only) */}
-            {type === 'expense' && (
-              <View className="mt-4">
-                <Text className="text-gray-700 font-semibold mb-2">
-                  Due Date (Optional)
-                </Text>
-                <TouchableOpacity
-                  onPress={() => setShowDatePicker(true)}
-                  className="border border-gray-300 rounded-lg px-4 py-3 bg-white flex-row items-center justify-between">
-                  <Text className={dueDate ? 'text-gray-800' : 'text-gray-400'}>
-                    {dueDate
-                      ? dueDate.toLocaleDateString('en-US', {
-                          month: 'long',
-                          day: 'numeric',
-                          year: 'numeric',
-                        })
-                      : 'No due date'}
-                  </Text>
-                  <View className="flex-row items-center">
-                    {dueDate && (
-                      <TouchableOpacity
-                        onPress={(e) => {
-                          e.stopPropagation();
-                          setDueDate(null);
-                        }}
-                        className="mr-2">
-                        <Ionicons name="close-circle" size={20} color="#9ca3af" />
-                      </TouchableOpacity>
-                    )}
-                    <Ionicons name="calendar-outline" size={20} color="#6b7280" />
-                  </View>
-                </TouchableOpacity>
-                <Text className="text-xs text-gray-500 mt-1">
-                  Set a due date to prioritize this expense in smart allocation
-                </Text>
+            {/* Available Amount */}
+            <View className="mb-4">
+              <Text className="text-gray-700 font-semibold mb-2">
+                Available in Envelope *
+              </Text>
+              <View className="flex-row items-center border border-gray-300 rounded-lg bg-white">
+                <Text className="text-gray-500 text-lg px-4">$</Text>
+                <TextInput
+                  className="flex-1 py-3 pr-4"
+                  value={availableAmount}
+                  onChangeText={setAvailableAmount}
+                  onBlur={() => {
+                    if (availableAmount) {
+                      setAvailableAmount(formatCurrencyInput(availableAmount));
+                    }
+                  }}
+                  placeholder="0.00"
+                  keyboardType="decimal-pad"
+                />
               </View>
-            )}
+              <Text className="text-xs text-gray-500 mt-1">
+                The actual cash currently in this envelope. This is what you can spend right now.
+              </Text>
+            </View>
+
+            {/* Due Date */}
+            <View className="mt-4">
+              <Text className="text-gray-700 font-semibold mb-2">
+                Due Date (Optional)
+              </Text>
+              <TouchableOpacity
+                onPress={() => setShowDatePicker(true)}
+                className="border border-gray-300 rounded-lg px-4 py-3 bg-white flex-row items-center justify-between">
+                <Text className={dueDate ? 'text-gray-800' : 'text-gray-400'}>
+                  {dueDate
+                    ? dueDate.toLocaleDateString('en-US', {
+                        month: 'long',
+                        day: 'numeric',
+                        year: 'numeric',
+                      })
+                    : 'No due date'}
+                </Text>
+                <View className="flex-row items-center">
+                  {dueDate && (
+                    <TouchableOpacity
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        setDueDate(null);
+                      }}
+                      className="mr-2">
+                      <Ionicons name="close-circle" size={20} color="#9ca3af" />
+                    </TouchableOpacity>
+                  )}
+                  <Ionicons name="calendar-outline" size={20} color="#6b7280" />
+                </View>
+              </TouchableOpacity>
+              <Text className="text-xs text-gray-500 mt-1">
+                Set a due date to prioritize this expense in smart allocation
+              </Text>
+            </View>
 
             {/* Delete Button */}
             <View className="mt-8 pt-6 border-t border-gray-200">

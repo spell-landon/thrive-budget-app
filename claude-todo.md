@@ -1,3 +1,16 @@
+Goals:
+
+- Account: Savings (Ally) <- add bank name
+- In BudgetScreen, if on a "Goal Tracking" account, disable "Add Category" button.
+  Account/Budget:
+- I'm thinking that maybe we also declare on the Account Add/Edit Screens to determine if the Account should have categories. Like right now, I have "Self-Employment Taxes" as a "Savings" account in "Ally", I'm not going to add any categories to the account, but it's still showing up in the Budget Screen.
+
+Errors:
+
+On Initial Load: `ERROR  Error loading data: {"code": "23503", "details": "Key is not present in table \"users\".", "hint": null, "message": "insert or update on table \"budgets\" violates foreign key constraint \"budgets_user_id_fkey\""}`
+When Saving New Income Source: `insert or update on table "income_sources" violates foreign key constraint "income_-sources_user_id_fkey"`
+When opening the "Accounts" screen: `0, _servicesBudgers.getCurrentMonth-Budget is not a function (it is undefined)`
+
 For accounts that are "Loans" or "Credit Cards", the interest applied happens every month, how should we handle this fluctuation in amount? My first thought was to change the account amount, but I'm wondering now if I should create a new transaction every 1st of the month to apply the difference from what we had, to the new cost? Like for instance, we have a car loan for $13,231.64, during the month, we plan to make a payment of $395.12. But come next month, interest will be applied and so the amount will be different than that is expected. Do we then apply a new transaction to cover the interest, or do we change the actual account amount?
 
 🎯 P1 Features - High Priority Enhancements

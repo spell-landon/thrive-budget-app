@@ -13,18 +13,18 @@ export default function MoreScreen({ navigation }: any) {
       color: '#FF6B35',
     },
     {
+      title: 'Income Sources',
+      icon: 'cash',
+      description: 'Manage income sources and allocation templates',
+      screen: 'IncomeSources',
+      color: '#3B82F6',
+    },
+    {
       title: 'Subscriptions',
       icon: 'repeat',
       description: 'Track recurring payments',
       screen: 'Subscriptions',
       color: '#10B981',
-    },
-    {
-      title: 'Paycheck Planning',
-      icon: 'cash',
-      description: 'Plan your paycheck allocations',
-      screen: 'PaycheckPlanning',
-      color: '#3B82F6',
     },
     {
       title: 'Category Groups',

@@ -27,7 +27,17 @@ export default function SelectAccountScreen({ route, navigation }: any) {
 
     try {
       const data = await getAccounts(user.id);
-      setAccounts(data);
+
+      // Sort accounts: checking first, then by name
+      const sortedAccounts = data.sort((a, b) => {
+        // Checking accounts come first
+        if (a.type === 'checking' && b.type !== 'checking') return -1;
+        if (a.type !== 'checking' && b.type === 'checking') return 1;
+        // Then sort alphabetically by name
+        return a.name.localeCompare(b.name);
+      });
+
+      setAccounts(sortedAccounts);
     } catch (error: any) {
       console.error('Error loading accounts:', error);
     } finally {
@@ -44,16 +54,6 @@ export default function SelectAccountScreen({ route, navigation }: any) {
 
   return (
     <SafeAreaView className='flex-1 bg-gray-50' edges={['bottom']}>
-      {/* Header */}
-      <View className='flex-row items-center justify-between px-6 py-4 bg-white border-b border-gray-200'>
-        <View className='flex-row items-center'>
-          <TouchableOpacity onPress={() => navigation.goBack()} className='mr-4'>
-            <Ionicons name='arrow-back' size={24} color='#1f2937' />
-          </TouchableOpacity>
-          <Text className='text-xl font-bold text-gray-800'>Select Account</Text>
-        </View>
-      </View>
-
       {loading ? (
         <View className='flex-1 items-center justify-center'>
           <ActivityIndicator size='large' color='#FF6B35' />
@@ -66,12 +66,12 @@ export default function SelectAccountScreen({ route, navigation }: any) {
           </Text>
         </View>
       ) : (
-        <ScrollView className='flex-1'>
+        <ScrollView className='flex-1 pt-4'>
           {accounts.map((account) => (
             <TouchableOpacity
               key={account.id}
               onPress={() => handleSelectAccount(account.id)}
-              className={`mx-4 my-2 px-6 py-4 rounded-lg border ${
+              className={`mx-4 mb-2 px-6 py-4 rounded-lg border ${
                 selectedAccountId === account.id
                   ? 'bg-primary-50 border-primary'
                   : 'bg-white border-gray-200'
@@ -81,7 +81,9 @@ export default function SelectAccountScreen({ route, navigation }: any) {
                   <Ionicons
                     name='wallet'
                     size={24}
-                    color={selectedAccountId === account.id ? '#FF6B35' : '#6b7280'}
+                    color={
+                      selectedAccountId === account.id ? '#FF6B35' : '#6b7280'
+                    }
                   />
                   <View className='ml-3 flex-1'>
                     <Text

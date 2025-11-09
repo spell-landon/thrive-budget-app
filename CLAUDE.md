@@ -4,10 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Thrive is a family budgeting app built with React Native and Expo, inspired by Monarch Money but with specific enhancements:
+Thrive is a family budgeting app built with React Native and Expo, using YNAB-style envelope budgeting with key enhancements:
+- **Envelope budgeting**: Manually assign money to budget category "envelopes" with Ready to Assign
 - **Cents precision**: All financial amounts show decimals (not just dollars)
-- **Paycheck planning**: EveryDollar-style paycheck allocation feature
 - **Real-time account balances**: Always visible current account amounts for informed spending decisions
+- **Flexible money management**: Move money between categories, cover overspending, transfer between accounts
 - **Multi-user support**: Shared budgets for family members
 
 ## Tech Stack
@@ -53,7 +54,9 @@ thrive-budget-app/
 │   │   ├── DashboardScreen.tsx
 │   │   ├── BudgetScreen.tsx
 │   │   ├── TransactionsScreen.tsx
-│   │   └── PaycheckPlanningScreen.tsx
+│   │   ├── AssignMoneyScreen.tsx
+│   │   ├── MoveCategoryMoneyScreen.tsx
+│   │   └── TransferMoneyScreen.tsx
 │   ├── services/
 │   │   └── supabase.ts        # Supabase client configuration
 │   ├── types/
@@ -78,11 +81,38 @@ thrive-budget-app/
 RootNavigator (Stack)
 ├── Login Screen (if not authenticated)
 └── Main Tab Navigator (if authenticated)
-    ├── Dashboard (Home)
-    ├── Budget
+    ├── Dashboard (Home with Drawer Menu)
+    ├── Accounts
     ├── Transactions
-    └── Paycheck Planning
+    ├── Budget
+    └── Goals
 ```
+
+### Envelope Budgeting System (Per-Account)
+The app uses **per-account envelope budgeting** - each account has its own categories and "Ready to Assign" pool.
+
+**Category Amounts:**
+1. **allocated_amount** - The monthly target/goal for this category (what you plan to spend)
+2. **available_amount** - The actual cash assigned to this category envelope (what you can spend right now)
+3. **spent_amount** - Money actually spent from transactions
+
+**Key Formula (Per Account):**
+```
+Ready to Assign (for account X) = Account X Balance - Sum(account X categories.available_amount)
+```
+
+**Money Flow:**
+1. Income can be split across multiple accounts using income sources and account splits
+2. Within each account, income increases "Ready to Assign" for that account
+3. Users manually assign money from account-specific "Ready to Assign" to categories in that account
+4. Money can only be moved between categories within the same account
+5. Transfers between accounts are separate operations
+
+**Goal-Tracking Accounts:**
+- Accounts can be flagged as `is_goal_tracking = true`
+- Categories in goal-tracking accounts appear as "Goals" on the Goals screen
+- The category's `available_amount` represents current progress toward the goal
+- Goals are UI wrappers around these categories with additional metadata (target_amount, target_date, image)
 
 ### Data Model Philosophy
 **All financial amounts stored as INTEGERS in cents** to avoid floating-point precision issues.
@@ -96,20 +126,27 @@ Located in `src/types/index.ts`. Key tables:
 
 ### Core Tables
 - **profiles**: User profiles linked to Supabase auth.users
-- **accounts**: Financial accounts (checking, savings, credit cards) with balance in cents
+- **accounts**: Financial accounts (checking, savings, credit cards) with balance in cents. Includes `is_goal_tracking` flag for goal-tracking accounts
 - **transactions**: Income/expense records with cents precision
 - **budgets**: Monthly budget containers
-- **budget_categories**: Budget line items with allocated/spent amounts
-- **savings_goals**: Savings targets with progress tracking
-- **paycheck_plans**: Income planning framework
-- **paycheck_allocations**: How paycheck income is distributed to categories
+- **budget_categories**: Budget line items scoped to accounts with allocated_amount (target), available_amount (cash in envelope), spent_amount, and `account_id`
+- **savings_goals**: Savings goal metadata (name, target, dates, images). Links to category in goal-tracking account via `category_id`
+- **income_sources**: Income source definitions (name, expected amount, frequency)
+- **income_account_splits**: Split income across accounts (percentage, fixed, remainder allocation types)
+- **income_templates**: Optional auto-allocation templates for categories within accounts
+- **subscriptions**: Recurring payment tracking with auto-reminders
+- **category_groups**: Organize budget categories into groups
 
 ### Important Schema Notes
 1. All amount fields are `number` type representing **cents** (integers in DB)
 2. Dates stored as ISO strings: `YYYY-MM-DD` or `YYYY-MM-DDTHH:mm:ss`
 3. User relationships use `user_id` foreign keys with RLS policies
-4. Account types: `'checking' | 'savings' | 'credit_card' | 'investment'`
+4. Account types: `'checking' | 'savings' | 'credit_card' | 'investment' | 'loan'`
 5. Transaction types: `'income' | 'expense' | 'transfer'`
+6. **Budget category type: `'expense'` ONLY** - All categories are expense type. Savings goals use goal-tracking accounts instead
+7. **Per-Account Budgeting**: Each `budget_category` has an `account_id` - categories are scoped to specific accounts
+8. **Goal-Tracking**: Accounts with `is_goal_tracking = true` have their categories displayed as goals
+9. **Income Allocation**: Income is split across accounts first (via `income_account_splits`), then optionally auto-allocated to categories (via `income_templates`)
 
 ## Supabase Setup
 
@@ -174,19 +211,27 @@ presets: [require("nativewind/preset")]
 - ✅ NativeWind styling configured
 - ✅ Supabase client and authentication
 - ✅ Protected navigation with auth routing
-- ✅ Basic screen structure
+- ✅ Full screen structure with bottom tabs + drawer
 - ✅ TypeScript types for database schema
+- ✅ Account management (CRUD operations)
+- ✅ Budget creation and category management
+- ✅ Transaction tracking with cents precision
+- ✅ Per-account envelope budgeting with account-specific Ready to Assign
+- ✅ Move money between categories (same-account only)
+- ✅ Transfer money between accounts
+- ✅ Cover overspending feature
+- ✅ Goal-tracking accounts for savings goals
+- ✅ Income source management with account splits
+- ✅ Subscriptions management
+- ✅ Category groups
 
 ### To Implement
-- ⏳ Database table creation in Supabase
-- ⏳ Account management (CRUD operations)
-- ⏳ Budget creation and category management
-- ⏳ Transaction tracking with cents precision
-- ⏳ Paycheck planning feature
-- ⏳ Savings goals tracking
 - ⏳ Data visualization (charts for budgets/spending)
 - ⏳ Multi-user family sharing
 - ⏳ Real-time data sync
+- ⏳ Budget reports and analytics
+- ⏳ Recurring transaction templates
+- ⏳ Mobile notifications for subscriptions
 
 ## Common Development Tasks
 

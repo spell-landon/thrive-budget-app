@@ -58,7 +58,7 @@ export async function createCategoryGroup(
   group: {
     name: string;
     category_type: 'income' | 'expense' | 'savings';
-    is_default?: boolean;
+    icon?: string;
     sort_order?: number;
   }
 ): Promise<CategoryGroup> {
@@ -68,7 +68,7 @@ export async function createCategoryGroup(
       user_id: userId,
       name: group.name,
       category_type: group.category_type,
-      is_default: group.is_default || false,
+      icon: group.icon || 'folder',
       sort_order: group.sort_order || 0,
     })
     .select()
@@ -85,6 +85,7 @@ export async function updateCategoryGroup(
   groupId: string,
   updates: {
     name?: string;
+    icon?: string;
     sort_order?: number;
   }
 ): Promise<CategoryGroup> {
@@ -123,33 +124,76 @@ export async function reorderCategoryGroups(
 }
 
 /**
+ * Update category group name and icon, cascading name changes to all budget categories using this group
+ */
+export async function updateCategoryGroupNameAndIcon(
+  groupId: string,
+  oldName: string,
+  newName: string,
+  newIcon?: string
+): Promise<void> {
+  // First, update the category group with both name and icon
+  const updates: { name: string; icon?: string } = { name: newName };
+  if (newIcon) {
+    updates.icon = newIcon;
+  }
+  await updateCategoryGroup(groupId, updates);
+
+  // Then, update all budget categories that use this group name (only if name changed)
+  if (oldName !== newName) {
+    const { error } = await supabase
+      .from('budget_categories')
+      .update({ category_group: newName })
+      .eq('category_group', oldName);
+
+    if (error) throw error;
+  }
+}
+
+/**
  * Update category group name and cascade to all budget categories using this group
+ * @deprecated Use updateCategoryGroupNameAndIcon instead
  */
 export async function updateCategoryGroupName(
   groupId: string,
   oldName: string,
   newName: string
 ): Promise<void> {
-  // First, update the category group
-  await updateCategoryGroup(groupId, { name: newName });
-
-  // Then, update all budget categories that use this group name
-  const { error } = await supabase
-    .from('budget_categories')
-    .update({ category_group: newName })
-    .eq('category_group', oldName);
-
-  if (error) throw error;
+  return updateCategoryGroupNameAndIcon(groupId, oldName, newName);
 }
 
 /**
  * Initialize default category groups for a new user
  */
 export async function initializeDefaultCategoryGroups(userId: string): Promise<void> {
-  // Call the Supabase function that creates default groups
-  const { error } = await supabase.rpc('initialize_default_category_groups', {
-    p_user_id: userId,
-  });
+  // Create default expense groups
+  const expenseGroups = [
+    { name: 'Housing', sort_order: 0 },
+    { name: 'Transportation', sort_order: 1 },
+    { name: 'Food & Dining', sort_order: 2 },
+    { name: 'Utilities', sort_order: 3 },
+    { name: 'Healthcare', sort_order: 4 },
+    { name: 'Personal Care', sort_order: 5 },
+    { name: 'Entertainment', sort_order: 6 },
+    { name: 'Shopping', sort_order: 7 },
+    { name: 'Debt Payments', sort_order: 8 },
+    { name: 'Education', sort_order: 9 },
+    { name: 'Pets', sort_order: 10 },
+    { name: 'Giving', sort_order: 11 },
+    { name: 'Miscellaneous', sort_order: 12 },
+  ];
+
+  // Insert all groups
+  const groupsToInsert = expenseGroups.map(group => ({
+    user_id: userId,
+    name: group.name,
+    category_type: 'expense' as const,
+    sort_order: group.sort_order,
+  }));
+
+  const { error } = await supabase
+    .from('category_groups')
+    .insert(groupsToInsert);
 
   if (error) throw error;
 }

@@ -8,11 +8,12 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
-import { createAccount } from '../services/accounts';
+import { createAccount, canAccountBeGoalTracking } from '../services/accounts';
 import { parseCurrencyInput, formatCurrencyInput } from '../utils/currency';
 
 type AccountType =
@@ -28,6 +29,7 @@ export default function AddAccountScreen({ navigation }: any) {
   const [type, setType] = useState<AccountType>('checking');
   const [balance, setBalance] = useState('');
   const [institution, setInstitution] = useState('');
+  const [isGoalTracking, setIsGoalTracking] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const accountTypes: { value: AccountType; label: string; icon: string }[] = [
@@ -44,7 +46,7 @@ export default function AddAccountScreen({ navigation }: any) {
       handleSubmit,
       loading,
     });
-  }, [loading]);
+  }, [loading, name, type, balance, institution, isGoalTracking]);
 
   const handleSubmit = async () => {
     if (!user) return;
@@ -64,14 +66,15 @@ export default function AddAccountScreen({ navigation }: any) {
         type,
         balance: balanceInCents,
         institution: institution.trim() || undefined,
+        is_goal_tracking: isGoalTracking,
       });
 
       Alert.alert('Success', 'Account created successfully!');
       navigation.goBack();
+      // Don't reset loading state when navigating away - the screen is unmounting
     } catch (error: any) {
       Alert.alert('Error', error.message);
-    } finally {
-      setLoading(false);
+      setLoading(false); // Only reset loading if we're staying on the screen
     }
   };
 
@@ -128,6 +131,30 @@ export default function AddAccountScreen({ navigation }: any) {
                 ))}
               </View>
             </View>
+
+            {/* Goal-Tracking Toggle (only for checking/savings/investment) */}
+            {canAccountBeGoalTracking(type) && (
+              <View className='mb-4 bg-white border border-gray-200 rounded-lg p-4'>
+                <View className='flex-row items-center justify-between mb-2'>
+                  <View className='flex-1 mr-4'>
+                    <Text className='text-gray-700 font-semibold mb-1'>
+                      Use for Goal Tracking
+                    </Text>
+                    <Text className='text-xs text-gray-600 leading-4'>
+                      Categories in this account will appear as savings goals.
+                      Perfect for dedicated savings accounts where each category
+                      represents a specific goal (Emergency Fund, Vacation, etc.)
+                    </Text>
+                  </View>
+                  <Switch
+                    value={isGoalTracking}
+                    onValueChange={setIsGoalTracking}
+                    trackColor={{ false: '#d1d5db', true: '#FCD5C5' }}
+                    thumbColor={isGoalTracking ? '#C93B00' : '#f3f4f6'}
+                  />
+                </View>
+              </View>
+            )}
 
             {/* Initial Balance */}
             <View className='mb-4'>

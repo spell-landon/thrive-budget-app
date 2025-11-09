@@ -8,19 +8,14 @@ import LoginScreen from '../screens/LoginScreen';
 import MainTabNavigator from './MainTabNavigator';
 import AddAccountScreen from '../screens/AddAccountScreen';
 import EditAccountScreen from '../screens/EditAccountScreen';
+import ReorderAccountsScreen from '../screens/ReorderAccountsScreen';
 import AddTransactionScreen from '../screens/AddTransactionScreen';
 import EditTransactionScreen from '../screens/EditTransactionScreen';
 import AddBudgetCategoryScreen from '../screens/AddBudgetCategoryScreen';
 import EditBudgetCategoryScreen from '../screens/EditBudgetCategoryScreen';
 import AddGoalScreen from '../screens/AddGoalScreen';
 import EditGoalScreen from '../screens/EditGoalScreen';
-import PaycheckPlanningScreen from '../screens/PaycheckPlanningScreen';
 import CategoryGroupsSettingsScreen from '../screens/CategoryGroupsSettingsScreen';
-import AddPaycheckScreen from '../screens/AddPaycheckScreen';
-import EditPaycheckScreen from '../screens/EditPaycheckScreen';
-import PaycheckAllocationScreen from '../screens/PaycheckAllocationScreen';
-import AccountDistributionScreen from '../screens/AccountDistributionScreen';
-import AccountAllocationRulesScreen from '../screens/AccountAllocationRulesScreen';
 import SubscriptionsScreen from '../screens/SubscriptionsScreen';
 import AddSubscriptionScreen from '../screens/AddSubscriptionScreen';
 import EditSubscriptionScreen from '../screens/EditSubscriptionScreen';
@@ -29,17 +24,26 @@ import DatePickerExampleScreen from '../screens/DatePickerExampleScreen';
 import SelectAccountScreen from '../screens/SelectAccountScreen';
 import SelectCategoryScreen from '../screens/SelectCategoryScreen';
 import SelectCategoryGroupScreen from '../screens/SelectCategoryGroupScreen';
-import AllocationPreviewScreen from '../screens/AllocationPreviewScreen';
+import SelectIncomeSourceScreen from '../screens/SelectIncomeSourceScreen';
 import AssignMoneyScreen from '../screens/AssignMoneyScreen';
+import TransferMoneyScreen from '../screens/TransferMoneyScreen';
+import MoveCategoryMoneyScreen from '../screens/MoveCategoryMoneyScreen';
+import IncomeSourcesScreen from '../screens/IncomeSourcesScreen';
+import AccountSplitsScreen from '../screens/AccountSplitsScreen';
+import IncomeTemplateScreen from '../screens/IncomeTemplateScreen';
 
 const Stack = createStackNavigator();
 
 // Helper function for standardized modal header
 const createModalHeader =
-  (title: string, actionText?: string) =>
+  (
+    title: string,
+    actionText?: string,
+    presentation?: 'card' | 'modal' | 'transparentModal' | undefined
+  ) =>
   ({ navigation, route }: any) => {
     const headerConfig: any = {
-      presentation: 'modal',
+      presentation: presentation ?? 'modal',
       headerShown: true,
       title,
       headerTintColor: '#FF6B35',
@@ -124,6 +128,15 @@ export default function RootNavigator() {
               options={createModalHeader('Edit Account', 'Save')}
             />
             <Stack.Screen
+              name='ReorderAccounts'
+              component={ReorderAccountsScreen}
+              options={{
+                headerShown: false,
+                presentation: 'card',
+                animation: 'slide_from_right',
+              }}
+            />
+            <Stack.Screen
               name='AddTransaction'
               component={AddTransactionScreen}
               options={({ navigation, route }) => ({
@@ -191,12 +204,22 @@ export default function RootNavigator() {
             <Stack.Screen
               name='EditBudgetCategory'
               component={EditBudgetCategoryScreen}
-              options={createModalHeader('Edit Category', 'Save')}
+              options={createModalHeader('Edit Category', 'Save', 'card')}
             />
             <Stack.Screen
               name='AssignMoney'
               component={AssignMoneyScreen}
               options={createModalHeader('Assign Money', 'Assign')}
+            />
+            <Stack.Screen
+              name='TransferMoney'
+              component={TransferMoneyScreen}
+              options={createModalHeader('Transfer Money', 'Transfer')}
+            />
+            <Stack.Screen
+              name='MoveCategoryMoney'
+              component={MoveCategoryMoneyScreen}
+              options={createModalHeader('Move Money', 'Move')}
             />
             <Stack.Screen
               name='AddGoal'
@@ -207,32 +230,6 @@ export default function RootNavigator() {
               name='EditGoal'
               component={EditGoalScreen}
               options={createModalHeader('Edit Goal', 'Save')}
-            />
-            <Stack.Screen
-              name='PaycheckPlanning'
-              component={PaycheckPlanningScreen}
-              options={({ navigation }) => ({
-                headerShown: true,
-                animation: 'slide_from_right',
-                title: 'Paycheck Planning',
-                headerBackTitle: 'Back',
-                headerTintColor: '#FF6B35',
-                headerStyle: {
-                  backgroundColor: '#ffffff',
-                },
-                headerTitleStyle: {
-                  fontSize: 18,
-                  fontWeight: '700',
-                  color: '#1F2937',
-                },
-                headerRight: () => (
-                  <TouchableOpacity
-                    onPress={() => navigation.navigate('AddPaycheck')}
-                    style={{ marginRight: 16 }}>
-                    <Ionicons name='add' size={28} color='#FF6B35' />
-                  </TouchableOpacity>
-                ),
-              })}
             />
             <Stack.Screen
               name='Profile'
@@ -257,59 +254,6 @@ export default function RootNavigator() {
               name='CategoryGroupsSettings'
               component={CategoryGroupsSettingsScreen}
               options={createModalHeader('Category Groups')}
-            />
-            <Stack.Screen
-              name='AddPaycheck'
-              component={AddPaycheckScreen}
-              options={createModalHeader('Add Paycheck', 'Add')}
-            />
-            <Stack.Screen
-              name='EditPaycheck'
-              component={EditPaycheckScreen}
-              options={createModalHeader('Edit Paycheck', 'Save')}
-            />
-            <Stack.Screen
-              name='PaycheckAllocation'
-              component={PaycheckAllocationScreen}
-              options={createModalHeader('Allocate Paycheck', 'Save')}
-            />
-            <Stack.Screen
-              name='AccountDistributionScreen'
-              component={AccountDistributionScreen}
-              options={{
-                headerShown: true,
-                animation: 'slide_from_right',
-                title: 'Account Distribution',
-                headerBackTitle: 'Back',
-                headerTintColor: '#FF6B35',
-                headerStyle: {
-                  backgroundColor: '#ffffff',
-                },
-                headerTitleStyle: {
-                  fontSize: 18,
-                  fontWeight: '700',
-                  color: '#1F2937',
-                },
-              }}
-            />
-            <Stack.Screen
-              name='AccountAllocationRulesScreen'
-              component={AccountAllocationRulesScreen}
-              options={{
-                headerShown: true,
-                animation: 'slide_from_right',
-                title: 'Account Allocation Rules',
-                headerBackTitle: 'Back',
-                headerTintColor: '#FF6B35',
-                headerStyle: {
-                  backgroundColor: '#ffffff',
-                },
-                headerTitleStyle: {
-                  fontSize: 18,
-                  fontWeight: '700',
-                  color: '#1F2937',
-                },
-              }}
             />
             <Stack.Screen
               name='Subscriptions'
@@ -382,9 +326,66 @@ export default function RootNavigator() {
               options={createModalHeader('Select Group')}
             />
             <Stack.Screen
-              name='AllocationPreview'
-              component={AllocationPreviewScreen}
-              options={createModalHeader('Allocation Preview')}
+              name='SelectIncomeSource'
+              component={SelectIncomeSourceScreen}
+              options={createModalHeader('Select Income Source')}
+            />
+            <Stack.Screen
+              name='IncomeSources'
+              component={IncomeSourcesScreen}
+              options={{
+                headerShown: true,
+                animation: 'slide_from_right',
+                title: 'Income Sources',
+                headerBackTitle: 'Back',
+                headerTintColor: '#FF6B35',
+                headerStyle: {
+                  backgroundColor: '#ffffff',
+                },
+                headerTitleStyle: {
+                  fontSize: 18,
+                  fontWeight: '700',
+                  color: '#1F2937',
+                },
+              }}
+            />
+            <Stack.Screen
+              name='AccountSplits'
+              component={AccountSplitsScreen}
+              options={{
+                headerShown: true,
+                animation: 'slide_from_right',
+                title: 'Account Splits',
+                headerBackTitle: 'Back',
+                headerTintColor: '#FF6B35',
+                headerStyle: {
+                  backgroundColor: '#ffffff',
+                },
+                headerTitleStyle: {
+                  fontSize: 18,
+                  fontWeight: '700',
+                  color: '#1F2937',
+                },
+              }}
+            />
+            <Stack.Screen
+              name='IncomeTemplate'
+              component={IncomeTemplateScreen}
+              options={{
+                headerShown: true,
+                animation: 'slide_from_right',
+                title: 'Allocation Templates',
+                headerBackTitle: 'Back',
+                headerTintColor: '#FF6B35',
+                headerStyle: {
+                  backgroundColor: '#ffffff',
+                },
+                headerTitleStyle: {
+                  fontSize: 18,
+                  fontWeight: '700',
+                  color: '#1F2937',
+                },
+              }}
             />
           </>
         ) : (

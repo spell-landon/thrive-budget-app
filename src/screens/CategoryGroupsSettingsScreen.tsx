@@ -16,12 +16,27 @@ import { useAuth } from '../contexts/AuthContext';
 import {
   getCategoryGroups,
   createCategoryGroup,
-  updateCategoryGroupName,
+  updateCategoryGroupNameAndIcon,
   deleteCategoryGroup,
 } from '../services/categoryGroups';
 import { CategoryGroup } from '../types';
 
 type CategoryType = 'income' | 'expense' | 'savings';
+
+// Preset category icons
+const CATEGORY_ICONS = [
+  'folder', // Default
+  'home', 'car', 'restaurant', 'cart', 'cafe',
+  'fast-food', 'pizza', 'wine', 'gift', 'shirt',
+  'airplane', 'train', 'bus', 'bicycle', 'walk',
+  'football', 'fitness', 'medkit', 'medical', 'heart',
+  'book', 'school', 'briefcase', 'business', 'laptop',
+  'phone-portrait', 'tv', 'game-controller', 'musical-notes', 'film',
+  'paw', 'leaf', 'flower', 'water', 'flame',
+  'wallet', 'card', 'cash', 'trending-up', 'stats-chart',
+  'basket', 'hammer', 'construct', 'build', 'person',
+  'people', 'globe', 'shield', 'trophy', 'star'
+];
 
 export default function CategoryGroupsSettingsScreen({ navigation }: any) {
   const { user } = useAuth();
@@ -33,7 +48,9 @@ export default function CategoryGroupsSettingsScreen({ navigation }: any) {
   const [selectedGroup, setSelectedGroup] = useState<CategoryGroup | null>(null);
   const [newGroupName, setNewGroupName] = useState('');
   const [newGroupType, setNewGroupType] = useState<CategoryType>('expense');
+  const [newGroupIcon, setNewGroupIcon] = useState('folder');
   const [editGroupName, setEditGroupName] = useState('');
+  const [editGroupIcon, setEditGroupIcon] = useState('folder');
 
   const loadGroups = useCallback(async () => {
     if (!user) return;
@@ -71,8 +88,10 @@ export default function CategoryGroupsSettingsScreen({ navigation }: any) {
       await createCategoryGroup(user.id, {
         name: newGroupName.trim(),
         category_type: newGroupType,
+        icon: newGroupIcon,
       });
       setNewGroupName('');
+      setNewGroupIcon('folder');
       setShowAddModal(false);
       loadGroups();
     } catch (error: any) {
@@ -86,16 +105,22 @@ export default function CategoryGroupsSettingsScreen({ navigation }: any) {
       return;
     }
 
-    if (editGroupName.trim() === selectedGroup.name) {
+    if (editGroupName.trim() === selectedGroup.name && editGroupIcon === (selectedGroup.icon || 'folder')) {
       setShowEditModal(false);
       return;
     }
 
     try {
-      await updateCategoryGroupName(selectedGroup.id, selectedGroup.name, editGroupName.trim());
+      await updateCategoryGroupNameAndIcon(
+        selectedGroup.id,
+        selectedGroup.name,
+        editGroupName.trim(),
+        editGroupIcon
+      );
       setShowEditModal(false);
       setSelectedGroup(null);
       setEditGroupName('');
+      setEditGroupIcon('folder');
       loadGroups();
     } catch (error: any) {
       Alert.alert('Error', error.message);
@@ -127,6 +152,7 @@ export default function CategoryGroupsSettingsScreen({ navigation }: any) {
   const openEditModal = (group: CategoryGroup) => {
     setSelectedGroup(group);
     setEditGroupName(group.name);
+    setEditGroupIcon(group.icon || 'folder');
     setShowEditModal(true);
   };
 
@@ -164,7 +190,7 @@ export default function CategoryGroupsSettingsScreen({ navigation }: any) {
             className="bg-white rounded-lg p-4 mb-2 shadow-sm border border-gray-100 flex-row items-center justify-between"
           >
             <View className="flex-row items-center flex-1">
-              <Ionicons name="folder" size={24} color={color} />
+              <Ionicons name={(group.icon || 'folder') as any} size={24} color={color} />
               <View className="ml-3 flex-1">
                 <Text className="text-base font-semibold text-gray-800">{group.name}</Text>
                 {group.is_default && (
@@ -288,6 +314,36 @@ export default function CategoryGroupsSettingsScreen({ navigation }: any) {
               </View>
             </View>
 
+            {/* Icon Selection */}
+            <View className="mb-4">
+              <Text className="text-gray-700 font-semibold mb-2">Icon</Text>
+              <ScrollView
+                horizontal={false}
+                className="max-h-48"
+                showsVerticalScrollIndicator={true}
+              >
+                <View className="flex-row flex-wrap gap-2">
+                  {CATEGORY_ICONS.map((iconName) => (
+                    <TouchableOpacity
+                      key={iconName}
+                      onPress={() => setNewGroupIcon(iconName)}
+                      className={`w-14 h-14 items-center justify-center rounded-lg border-2 ${
+                        newGroupIcon === iconName
+                          ? 'bg-primary-100 border-primary'
+                          : 'bg-white border-gray-200'
+                      }`}
+                    >
+                      <Ionicons
+                        name={iconName as any}
+                        size={24}
+                        color={newGroupIcon === iconName ? '#FF6B35' : '#6b7280'}
+                      />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </ScrollView>
+            </View>
+
             {/* Name Input */}
             <View className="mb-6">
               <Text className="text-gray-700 font-semibold mb-2">Group Name</Text>
@@ -334,6 +390,36 @@ export default function CategoryGroupsSettingsScreen({ navigation }: any) {
               <TouchableOpacity onPress={() => setShowEditModal(false)}>
                 <Ionicons name="close" size={24} color="#6b7280" />
               </TouchableOpacity>
+            </View>
+
+            {/* Icon Selection */}
+            <View className="mb-4">
+              <Text className="text-gray-700 font-semibold mb-2">Icon</Text>
+              <ScrollView
+                horizontal={false}
+                className="max-h-48"
+                showsVerticalScrollIndicator={true}
+              >
+                <View className="flex-row flex-wrap gap-2">
+                  {CATEGORY_ICONS.map((iconName) => (
+                    <TouchableOpacity
+                      key={iconName}
+                      onPress={() => setEditGroupIcon(iconName)}
+                      className={`w-14 h-14 items-center justify-center rounded-lg border-2 ${
+                        editGroupIcon === iconName
+                          ? 'bg-primary-100 border-primary'
+                          : 'bg-white border-gray-200'
+                      }`}
+                    >
+                      <Ionicons
+                        name={iconName as any}
+                        size={24}
+                        color={editGroupIcon === iconName ? '#FF6B35' : '#6b7280'}
+                      />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </ScrollView>
             </View>
 
             {/* Name Input */}

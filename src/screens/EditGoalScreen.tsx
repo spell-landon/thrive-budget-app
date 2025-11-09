@@ -24,6 +24,8 @@ import {
   addToGoal,
   defaultGoalImages,
 } from '../services/goals';
+import { getCategoryById } from '../services/budgets';
+import { supabase } from '../services/supabase';
 import { formatCurrency } from '../utils/currency';
 import { SavingsGoal } from '../types';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -33,6 +35,7 @@ export default function EditGoalScreen({ route, navigation }: any) {
   const { user } = useAuth();
   const [goal, setGoal] = useState<SavingsGoal | null>(null);
   const [allGoals, setAllGoals] = useState<SavingsGoal[]>([]);
+  const [accountName, setAccountName] = useState<string>('');
   const [name, setName] = useState('');
   const [targetAmount, setTargetAmount] = useState('');
   const [currentAmount, setCurrentAmount] = useState('');
@@ -78,6 +81,25 @@ export default function EditGoalScreen({ route, navigation }: any) {
       setTargetDate(data.target_date ? new Date(data.target_date) : null);
       setSelectedImage(data.image_url || null);
 
+      // Fetch account name and institution from category
+      try {
+        const category = await getCategoryById(data.category_id);
+        const { data: account, error: accountError } = await supabase
+          .from('accounts')
+          .select('name, institution')
+          .eq('id', category.account_id)
+          .single();
+
+        if (!accountError && account) {
+          const displayName = account.institution
+            ? `${account.name} (${account.institution})`
+            : account.name;
+          setAccountName(displayName);
+        }
+      } catch (error) {
+        console.error('Error loading account name:', error);
+      }
+
       if (user) {
         const goals = await getGoals(user.id);
         setAllGoals(goals.filter((g) => g.id !== goalId));
@@ -100,7 +122,7 @@ export default function EditGoalScreen({ route, navigation }: any) {
       handleSubmit: handleSave,
       loading: saving,
     });
-  }, [saving]);
+  }, [saving, name, targetAmount, currentAmount, targetDate, selectedImage]);
 
   const handleSave = async () => {
     if (!goal) return;
@@ -119,14 +141,10 @@ export default function EditGoalScreen({ route, navigation }: any) {
 
     try {
       const targetAmountCents = Math.round(parseFloat(targetAmount) * 100);
-      const currentAmountCents = Math.round(
-        parseFloat(currentAmount || '0') * 100
-      );
 
       await updateGoal(goal.id, {
         name: name.trim(),
         target_amount: targetAmountCents,
-        current_amount: currentAmountCents,
         target_date: targetDate ? formatDate(targetDate) : undefined,
         image_url: selectedImage || undefined,
       });
@@ -134,10 +152,10 @@ export default function EditGoalScreen({ route, navigation }: any) {
       Alert.alert('Success', 'Goal updated successfully!', [
         { text: 'OK', onPress: () => navigation.goBack() },
       ]);
+      // Don't reset saving state when navigating away - the screen is unmounting
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to update goal');
-    } finally {
-      setSaving(false);
+      setSaving(false); // Only reset saving if we're staying on the screen
     }
   };
 
@@ -340,6 +358,25 @@ export default function EditGoalScreen({ route, navigation }: any) {
             />
           </View>
 
+          {/* Goal-Tracking Account (Read-Only) */}
+          {accountName && (
+            <View className='mb-6'>
+              <Text className='text-base font-semibold text-text-primary mb-2'>
+                Goal-Tracking Account
+              </Text>
+              <View className='bg-gray-100 border border-gray-200 rounded-lg px-4 py-3 flex-row items-center'>
+                <Ionicons name='wallet-outline' size={20} color='#6b7280' />
+                <Text className='ml-2 text-text-secondary flex-1'>
+                  {accountName}
+                </Text>
+                <Ionicons name='lock-closed-outline' size={16} color='#9ca3af' />
+              </View>
+              <Text className='text-xs text-text-tertiary mt-1'>
+                Account cannot be changed after goal creation
+              </Text>
+            </View>
+          )}
+
           <View className='mb-6'>
             <Text className='text-base font-semibold text-text-primary mb-2'>
               Target Amount *
@@ -351,24 +388,6 @@ export default function EditGoalScreen({ route, navigation }: any) {
                 placeholder='0.00'
                 value={targetAmount}
                 onChangeText={setTargetAmount}
-                keyboardType='decimal-pad'
-                placeholderTextColor='#9ca3af'
-                textAlignVertical='center'
-              />
-            </View>
-          </View>
-
-          <View className='mb-6'>
-            <Text className='text-base font-semibold text-text-primary mb-2'>
-              Current Amount
-            </Text>
-            <View className='flex-row items-center bg-card border border-gray-200 rounded-lg px-4'>
-              <Text className='text-text-secondary text-lg'>$</Text>
-              <TextInput
-                className='flex-1 py-3 text-base text-text-primary ml-2'
-                placeholder='0.00'
-                value={currentAmount}
-                onChangeText={setCurrentAmount}
                 keyboardType='decimal-pad'
                 placeholderTextColor='#9ca3af'
                 textAlignVertical='center'
@@ -488,6 +507,32 @@ export default function EditGoalScreen({ route, navigation }: any) {
                 </TouchableOpacity>
               ))}
             </ScrollView>
+          </View>
+
+          {/* Delete Goal Button */}
+          <View className='mb-6'>
+            <TouchableOpacity
+              onPress={confirmDelete}
+              className='bg-error-500 rounded-lg py-4 border-2 border-error-600'
+              style={{
+                shadowColor: '#EF4444',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.2,
+                shadowRadius: 4,
+                elevation: 3,
+              }}>
+              <View className='flex-row items-center justify-center'>
+                <Ionicons name='trash-outline' size={20} color='white' />
+                <Text className='text-white text-center font-bold text-base ml-2'>
+                  Delete Goal
+                </Text>
+              </View>
+            </TouchableOpacity>
+            <Text className='text-xs text-text-tertiary text-center mt-2'>
+              {goal.current_amount > 0
+                ? 'Saved funds will need to be transferred to another goal'
+                : 'This action cannot be undone'}
+            </Text>
           </View>
         </ScrollView>
       </View>

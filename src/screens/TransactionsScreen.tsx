@@ -22,6 +22,7 @@ import {
   getBudgetCategories,
 } from '../services/budgets';
 import { formatCurrency } from '../utils/currency';
+import { parseDateString } from '../utils/date';
 import { Transaction, Account, BudgetCategory } from '../types';
 
 export default function TransactionsScreen({ navigation }: any) {
@@ -162,7 +163,7 @@ export default function TransactionsScreen({ navigation }: any) {
   };
 
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
+    const date = parseDateString(dateString);
     return date.toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
@@ -181,7 +182,7 @@ export default function TransactionsScreen({ navigation }: any) {
   }, {} as Record<string, Transaction[]>);
 
   const sortedDates = Object.keys(groupedTransactions).sort(
-    (a, b) => new Date(b).getTime() - new Date(a).getTime()
+    (a, b) => parseDateString(b).getTime() - parseDateString(a).getTime()
   );
 
   return (
@@ -247,7 +248,7 @@ export default function TransactionsScreen({ navigation }: any) {
           </Text>
         ) : transactions.length === 0 ? (
           <View className='items-center mt-8 px-4'>
-            <Ionicons name='receipt-outline' size={64} color='#9ca3af' />
+            <Ionicons name='card-outline' size={64} color='#9ca3af' />
             <Text className='text-text-secondary mt-4 text-center'>
               No transactions yet. Add your first transaction to get started!
             </Text>
@@ -299,10 +300,10 @@ export default function TransactionsScreen({ navigation }: any) {
                             });
                           }
                         }}
-                        className={`bg-card p-4 border ${
+                        className={`bg-card p-4 ${
                           isSelected
-                            ? 'border-blue-500 bg-blue-50'
-                            : 'border-gray-200'
+                            ? 'border border-blue-500 bg-blue-50'
+                            : 'border-b border-gray-200'
                         }`}
                         activeOpacity={0.7}>
                         <View className='flex-row items-center'>

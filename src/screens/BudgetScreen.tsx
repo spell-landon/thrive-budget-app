@@ -7,16 +7,22 @@ import { useAuth } from '../contexts/AuthContext';
 import {
   getBudgetByMonth,
   createBudget,
-  getBudgetCategories,
+  getBudgetCategoriesByAccount,
   deleteBudgetCategory,
   copyBudgetCategories,
   getBudgets,
-  getReadyToAssign,
+  getReadyToAssignByAccount,
+  coverOverspending,
+  getTotalAllocated,
+  getTotalIncome,
 } from '../services/budgets';
+import { getBudgetableAccounts } from '../services/accounts';
+import { getCategoryGroups } from '../services/categoryGroups';
 import { formatCurrency } from '../utils/currency';
-import { Budget, BudgetCategory } from '../types';
+import { Budget, BudgetCategory, Account, CategoryGroup } from '../types';
+import BottomSheet from '../components/BottomSheet';
 
-type CategoryType = 'all' | 'income' | 'expense' | 'savings';
+type CategoryType = 'all' | 'expense' | 'savings';
 type SpendingFilter = 'all' | 'on-track' | 'warning' | 'over';
 type SortOption = 'group' | 'alphabetical' | 'amount' | 'spending';
 
@@ -24,11 +30,16 @@ export default function BudgetScreen({ navigation }: any) {
   const { user } = useAuth();
   const [budget, setBudget] = useState<Budget | null>(null);
   const [categories, setCategories] = useState<BudgetCategory[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [collapsedSections, setCollapsedSections] = useState<{ [key: string]: boolean }>({});
   const [readyToAssign, setReadyToAssign] = useState<number>(0);
+  const [totalIncome, setTotalIncome] = useState<number>(0);
+  const [totalAllocated, setTotalAllocated] = useState<number>(0);
+  const [categoryGroups, setCategoryGroups] = useState<CategoryGroup[]>([]);
 
   // Search, Filter, Sort state
   const [searchQuery, setSearchQuery] = useState('');
@@ -37,6 +48,12 @@ export default function BudgetScreen({ navigation }: any) {
   const [sortOption, setSortOption] = useState<SortOption>('group');
   const [showSortModal, setShowSortModal] = useState(false);
   const [hideUnbudgeted, setHideUnbudgeted] = useState(false);
+
+  // BottomSheet state
+  const [showCategoryMenu, setShowCategoryMenu] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<BudgetCategory | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showCoverOverspending, setShowCoverOverspending] = useState(false);
 
   const formatMonthKey = (date: Date) => {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
@@ -53,20 +70,44 @@ export default function BudgetScreen({ navigation }: any) {
     if (!user) return;
 
     try {
-      const monthKey = formatMonthKey(currentMonth);
-      const budgetData = await getBudgetByMonth(user.id, monthKey);
+      // Load budgetable accounts and category groups
+      const [accountsData, groupsData] = await Promise.all([
+        getBudgetableAccounts(user.id),
+        getCategoryGroups(user.id),
+      ]);
+      setAccounts(accountsData);
+      setCategoryGroups(groupsData);
+
+      // Select first account if none selected
+      if (!selectedAccount && accountsData.length > 0) {
+        setSelectedAccount(accountsData[0]);
+      }
+
+      // Use the current selected account or first account
+      const accountToUse = selectedAccount || accountsData[0];
+
+      const month = currentMonth.getMonth() + 1; // 1-12
+      const year = currentMonth.getFullYear();
+      const budgetData = await getBudgetByMonth(user.id, month, year);
       setBudget(budgetData);
 
-      if (budgetData) {
-        const [categoriesData, readyToAssignAmount] = await Promise.all([
-          getBudgetCategories(budgetData.id),
-          getReadyToAssign(user.id, budgetData.id),
+      if (budgetData && accountToUse) {
+        // Load categories for selected account only and calculate totals
+        const [categoriesData, readyToAssignAmount, incomeTotal, allocatedTotal] = await Promise.all([
+          getBudgetCategoriesByAccount(budgetData.id, accountToUse.id),
+          getReadyToAssignByAccount(accountToUse.id, budgetData.id),
+          getTotalIncome(user.id, month, year),
+          getTotalAllocated(budgetData.id),
         ]);
         setCategories(categoriesData);
         setReadyToAssign(readyToAssignAmount);
+        setTotalIncome(incomeTotal);
+        setTotalAllocated(allocatedTotal);
       } else {
         setCategories([]);
         setReadyToAssign(0);
+        setTotalIncome(0);
+        setTotalAllocated(0);
       }
     } catch (error: any) {
       Alert.alert('Error', error.message);
@@ -74,7 +115,7 @@ export default function BudgetScreen({ navigation }: any) {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [user, currentMonth]);
+  }, [user, currentMonth, selectedAccount]);
 
   useFocusEffect(
     useCallback(() => {
@@ -104,20 +145,21 @@ export default function BudgetScreen({ navigation }: any) {
     if (!user) return;
 
     try {
-      const monthKey = formatMonthKey(currentMonth);
+      const month = currentMonth.getMonth() + 1; // 1-12
+      const year = currentMonth.getFullYear();
       const newBudget = await createBudget(user.id, {
-        month: monthKey,
+        month,
+        year,
         name: `Budget for ${formatMonthDisplay(currentMonth)}`,
-        total_income: 0,
-        total_allocated: 0,
       });
 
       if (copyFromPrevious) {
         // Get previous month's budget
         const prevMonth = new Date(currentMonth);
         prevMonth.setMonth(prevMonth.getMonth() - 1);
-        const prevMonthKey = formatMonthKey(prevMonth);
-        const prevBudget = await getBudgetByMonth(user.id, prevMonthKey);
+        const prevMonthNum = prevMonth.getMonth() + 1;
+        const prevYear = prevMonth.getFullYear();
+        const prevBudget = await getBudgetByMonth(user.id, prevMonthNum, prevYear);
 
         if (prevBudget) {
           await copyBudgetCategories(prevBudget.id, newBudget.id);
@@ -136,21 +178,19 @@ export default function BudgetScreen({ navigation }: any) {
   };
 
   const handleDeleteCategory = (category: BudgetCategory) => {
-    Alert.alert('Delete Category', `Are you sure you want to delete ${category.name}?`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          try {
-            await deleteBudgetCategory(category.id);
-            loadBudget();
-          } catch (error: any) {
-            Alert.alert('Error', error.message);
-          }
-        },
-      },
-    ]);
+    setSelectedCategory(category);
+    setShowDeleteConfirm(true);
+  };
+
+  const confirmDeleteCategory = async () => {
+    if (!selectedCategory) return;
+
+    try {
+      await deleteBudgetCategory(selectedCategory.id);
+      loadBudget();
+    } catch (error: any) {
+      Alert.alert('Error', error.message);
+    }
   };
 
   const handleEditCategory = (category: BudgetCategory) => {
@@ -158,25 +198,42 @@ export default function BudgetScreen({ navigation }: any) {
   };
 
   const handleCategoryMenu = (category: BudgetCategory) => {
-    Alert.alert(
-      category.name,
-      'Choose an action',
-      [
-        {
-          text: 'Edit',
-          onPress: () => handleEditCategory(category),
-        },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => handleDeleteCategory(category),
-        },
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-      ]
+    setSelectedCategory(category);
+    setShowCategoryMenu(true);
+  };
+
+  const handleCoverOverspending = async (overspentCategory: BudgetCategory) => {
+    // Get categories with available funds (excluding the overspent category)
+    const categoriesWithFunds = categories.filter(
+      c => c.id !== overspentCategory.id && c.available_amount > 0
     );
+
+    if (categoriesWithFunds.length === 0) {
+      Alert.alert(
+        'No Available Funds',
+        'There are no other categories with available money to cover this overspending.'
+      );
+      return;
+    }
+
+    setSelectedCategory(overspentCategory);
+    setShowCoverOverspending(true);
+  };
+
+  const handleCoverFromCategory = async (sourceCategory: BudgetCategory) => {
+    if (!selectedCategory) return;
+
+    try {
+      const deficit = Math.abs(selectedCategory.available_amount);
+      await coverOverspending(selectedCategory.id, sourceCategory.id);
+      Alert.alert(
+        'Success',
+        `Covered ${formatCurrency(deficit)} from ${sourceCategory.name}`
+      );
+      loadBudget(); // Reload to show updated amounts
+    } catch (error: any) {
+      Alert.alert('Error', error.message);
+    }
   };
 
   // Filter and sort categories
@@ -229,6 +286,15 @@ export default function BudgetScreen({ navigation }: any) {
     return filtered;
   }, [categories, searchQuery, typeFilter, spendingFilter, sortOption, hideUnbudgeted]);
 
+  // Create a mapping of group names to icons
+  const groupIconMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    categoryGroups.forEach(group => {
+      map[group.name] = group.icon || 'folder';
+    });
+    return map;
+  }, [categoryGroups]);
+
   // Group categories by category_group and sort by allocated amount within each group
   const groupedCategories: Record<string, BudgetCategory[]> = {};
   filteredAndSortedCategories.forEach((category) => {
@@ -251,7 +317,7 @@ export default function BudgetScreen({ navigation }: any) {
     return a.localeCompare(b);
   });
 
-  const remaining = budget ? budget.total_income - budget.total_allocated : 0;
+  const remaining = budget ? totalIncome - totalAllocated : 0;
 
   const getProgressPercentage = (spent: number, allocated: number) => {
     if (allocated === 0) return 0;
@@ -305,8 +371,10 @@ export default function BudgetScreen({ navigation }: any) {
     const totalSpent = localCategories.reduce((sum, c) => sum + c.spent_amount, 0);
     const isCollapsed = collapsedSections[groupName] || false;
 
-    // Use folder icon for all groups
-    const icon = groupName !== 'Ungrouped' ? 'folder' : 'folder-outline';
+    // Get icon from category group, default to folder-outline for Ungrouped
+    const icon = groupName === 'Ungrouped'
+      ? 'folder-outline'
+      : (groupIconMap[groupName] || 'folder');
     const categoryCount = localCategories.length;
 
     const renderCategoryCard = (category: BudgetCategory) => {
@@ -332,11 +400,20 @@ export default function BudgetScreen({ navigation }: any) {
         >
           {/* Warning Banner for Overspending */}
           {isOverspent && (
-            <View className="bg-error-50 rounded-lg p-2 mb-3 flex-row items-center">
-              <Ionicons name="alert-circle" size={16} color="#EF4444" />
-              <Text className="text-error-700 text-xs font-semibold ml-2">
-                Overspent by {formatCurrency(Math.abs(remaining))}
-              </Text>
+            <View className="bg-error-50 rounded-lg p-3 mb-3">
+              <View className="flex-row items-center justify-between">
+                <View className="flex-row items-center flex-1">
+                  <Ionicons name="alert-circle" size={16} color="#EF4444" />
+                  <Text className="text-error-700 text-xs font-semibold ml-2 flex-1">
+                    Overspent by {formatCurrency(Math.abs(remaining))}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => handleCoverOverspending(category)}
+                  className="bg-error-600 px-3 py-1.5 rounded-lg ml-2">
+                  <Text className="text-white text-xs font-semibold">Cover</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           )}
           {/* Info Banner for Needs Funding */}
@@ -349,30 +426,30 @@ export default function BudgetScreen({ navigation }: any) {
             </View>
           )}
 
-          <View className="flex-row justify-between items-start mb-3">
+          <View className="flex-row justify-between items-start mb-2">
             <View className="flex-1">
               <Text className="text-base font-semibold text-text-primary">{category.name}</Text>
-              <Text className="text-xs text-text-tertiary mt-0.5">
-                {formatCurrency(category.allocated_amount)} budgeted/month
-              </Text>
             </View>
-            <View className="flex-row items-center">
-              <View className="items-end">
-                <Text className={`text-xl font-bold ${isOverspent ? 'text-error-600' : 'text-text-primary'}`}>
-                  {formatCurrency(category.available_amount)}
-                </Text>
-                <Text className="text-xs text-text-secondary">
-                  {formatCurrency(category.spent_amount)} spent
-                </Text>
-              </View>
-              <TouchableOpacity
-                onPress={() => handleCategoryMenu(category)}
-                className="ml-2 p-1"
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <Ionicons name="ellipsis-vertical" size={20} color="#9ca3af" />
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity
+              onPress={() => handleCategoryMenu(category)}
+              className="p-1"
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Ionicons name="ellipsis-vertical" size={20} color="#9ca3af" />
+            </TouchableOpacity>
+          </View>
+
+          {/* Envelope Amount - Primary Display */}
+          <View className="mb-3">
+            <Text className="text-xs font-medium text-text-tertiary uppercase tracking-wide mb-1">
+              Available in Envelope
+            </Text>
+            <Text className={`text-3xl font-bold ${isOverspent ? 'text-error-600' : 'text-success-600'}`}>
+              {formatCurrency(category.available_amount)}
+            </Text>
+            <Text className="text-xs text-text-secondary mt-0.5">
+              What you can spend right now
+            </Text>
           </View>
 
           {/* Progress Bar - shows spent vs available */}
@@ -382,18 +459,23 @@ export default function BudgetScreen({ navigation }: any) {
             </View>
           </View>
 
-          {/* Bottom Row: Available status */}
-          <View className="flex-row items-center justify-between">
-            <Text className="text-sm text-text-secondary">
-              Available in bucket
-            </Text>
-            <Text
-              className={`text-sm font-semibold ${
-                remaining >= 0 ? 'text-success-600' : 'text-error-600'
-              }`}
-            >
-              {formatCurrency(Math.abs(remaining))} {remaining >= 0 ? 'left' : 'over'}
-            </Text>
+          {/* Bottom Row: Target vs Spent */}
+          <View className="flex-row items-center justify-between pt-2 border-t border-gray-200">
+            <View className="flex-1">
+              <Text className="text-xs text-text-tertiary mb-0.5">Monthly Target</Text>
+              <Text className="text-sm font-semibold text-text-primary">
+                {formatCurrency(category.allocated_amount)}
+              </Text>
+            </View>
+            <View className="w-px h-8 bg-gray-200 mx-3" />
+            <View className="flex-1 items-end">
+              <Text className="text-xs text-text-tertiary mb-0.5">Spent This Month</Text>
+              <Text className={`text-sm font-semibold ${
+                isOverspent ? 'text-error-600' : 'text-text-primary'
+              }`}>
+                {formatCurrency(category.spent_amount)}
+              </Text>
+            </View>
           </View>
         </View>
       );
@@ -457,18 +539,40 @@ export default function BudgetScreen({ navigation }: any) {
         <View className="px-6 py-4 bg-card border-b border-gray-200">
           <View className="flex-row justify-between items-center mb-3">
             <Text className="text-2xl font-bold text-text-primary">Budget</Text>
-            {budget && (
+            {budget && selectedAccount && (
               <TouchableOpacity
-                onPress={() => navigation.navigate('AddBudgetCategory', { budgetId: budget.id })}
-                className="bg-primary px-4 py-2 rounded-lg"
+                onPress={() => {
+                  if (!selectedAccount.is_goal_tracking) {
+                    navigation.navigate('AddBudgetCategory', {
+                      budgetId: budget.id,
+                      accountId: selectedAccount.id
+                    });
+                  }
+                }}
+                disabled={selectedAccount.is_goal_tracking}
+                className={`px-4 py-2 rounded-lg ${
+                  selectedAccount.is_goal_tracking ? 'bg-gray-300' : 'bg-primary'
+                }`}
               >
-                <Text className="text-white font-semibold">Add Category</Text>
+                <Text className={`font-semibold ${
+                  selectedAccount.is_goal_tracking ? 'text-gray-500' : 'text-white'
+                }`}>Add Category</Text>
               </TouchableOpacity>
             )}
           </View>
+          {selectedAccount?.is_goal_tracking && (
+            <View className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3">
+              <View className="flex-row items-start">
+                <Ionicons name="information-circle" size={18} color="#3B82F6" />
+                <Text className="text-blue-700 text-xs ml-2 flex-1">
+                  This is a goal-tracking account. Add categories from the Goals screen instead.
+                </Text>
+              </View>
+            </View>
+          )}
 
           {/* Month Navigation */}
-          <View className="flex-row items-center justify-between">
+          <View className="flex-row items-center justify-between mb-3">
             <TouchableOpacity onPress={handlePreviousMonth} className="p-2">
               <Ionicons name="chevron-back" size={24} color="#FF6B35" />
             </TouchableOpacity>
@@ -477,6 +581,50 @@ export default function BudgetScreen({ navigation }: any) {
               <Ionicons name="chevron-forward" size={24} color="#FF6B35" />
             </TouchableOpacity>
           </View>
+
+          {/* Account Selector */}
+          {accounts.length > 0 && (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              className="mb-2">
+              {accounts.map((account) => (
+                <TouchableOpacity
+                  key={account.id}
+                  onPress={() => {
+                    setSelectedAccount(account);
+                    setLoading(true);
+                  }}
+                  className={`mr-3 px-4 py-2 rounded-lg border ${
+                    selectedAccount?.id === account.id
+                      ? 'bg-primary border-primary'
+                      : 'bg-card border-gray-300'
+                  }`}>
+                  <View className="flex-row items-center">
+                    <Ionicons
+                      name={
+                        account.type === 'checking'
+                          ? 'card'
+                          : account.type === 'savings'
+                          ? 'wallet'
+                          : 'trending-up'
+                      }
+                      size={16}
+                      color={selectedAccount?.id === account.id ? '#fff' : '#6b7280'}
+                    />
+                    <Text
+                      className={`ml-2 text-sm font-semibold ${
+                        selectedAccount?.id === account.id
+                          ? 'text-white'
+                          : 'text-text-secondary'
+                      }`}>
+                      {account.name}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          )}
         </View>
 
         <ScrollView className="flex-1" refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
@@ -516,18 +664,6 @@ export default function BudgetScreen({ navigation }: any) {
                   >
                     <Text className={`text-sm font-semibold ${typeFilter === 'all' ? 'text-white' : 'text-gray-700'}`}>
                       All
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={() => setTypeFilter('income')}
-                    className={`mr-2 px-3 py-1.5 rounded-full border ${
-                      typeFilter === 'income'
-                        ? 'bg-success-500 border-success-500'
-                        : 'bg-card border-gray-300'
-                    }`}
-                  >
-                    <Text className={`text-sm font-semibold ${typeFilter === 'income' ? 'text-white' : 'text-gray-700'}`}>
-                      Income
                     </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
@@ -710,7 +846,10 @@ export default function BudgetScreen({ navigation }: any) {
                       </View>
                       <TouchableOpacity
                         onPress={() => {
-                          navigation.navigate('AssignMoney', { budgetId: budget.id });
+                          navigation.navigate('AssignMoney', {
+                            budgetId: budget.id,
+                            accountId: selectedAccount?.id
+                          });
                         }}
                         className="bg-white/20 px-4 py-2 rounded-lg">
                         <Text className="text-white text-sm font-semibold">Assign</Text>
@@ -741,7 +880,7 @@ export default function BudgetScreen({ navigation }: any) {
                       Monthly Budget
                     </Text>
                     <Text className="text-white text-3xl font-bold">
-                      {formatCurrency(budget.total_income)}
+                      {formatCurrency(totalIncome)}
                     </Text>
                     <Text className="text-primary-100 text-xs mt-1">Total Income</Text>
                   </View>
@@ -756,11 +895,11 @@ export default function BudgetScreen({ navigation }: any) {
                 <View className="mb-3">
                   <View className="flex-row justify-between mb-2">
                     <Text className="text-primary-100 text-xs font-medium">
-                      {formatCurrency(budget.total_allocated)} allocated
+                      {formatCurrency(totalAllocated)} allocated
                     </Text>
                     <Text className="text-white text-xs font-semibold">
-                      {budget.total_income > 0
-                        ? Math.round((budget.total_allocated / budget.total_income) * 100)
+                      {totalIncome > 0
+                        ? Math.round((totalAllocated / totalIncome) * 100)
                         : 0}%
                     </Text>
                   </View>
@@ -770,7 +909,7 @@ export default function BudgetScreen({ navigation }: any) {
                         remaining < 0 ? 'bg-error-400' : remaining === 0 ? 'bg-success-400' : 'bg-white'
                       }`}
                       style={{
-                        width: `${Math.min((budget.total_allocated / Math.max(budget.total_income, 1)) * 100, 100)}%`,
+                        width: `${Math.min((totalAllocated / Math.max(totalIncome, 1)) * 100, 100)}%`,
                       }}
                     />
                   </View>
@@ -799,7 +938,10 @@ export default function BudgetScreen({ navigation }: any) {
                     No budget categories yet. Add your first category to start budgeting!
                   </Text>
                   <TouchableOpacity
-                    onPress={() => navigation.navigate('AddBudgetCategory', { budgetId: budget.id })}
+                    onPress={() => selectedAccount && navigation.navigate('AddBudgetCategory', {
+                      budgetId: budget.id,
+                      accountId: selectedAccount.id
+                    })}
                     className="bg-primary px-6 py-3 rounded-lg"
                   >
                     <Text className="text-white font-semibold">Add Category</Text>
@@ -961,6 +1103,78 @@ export default function BudgetScreen({ navigation }: any) {
           </View>
         </View>
       </Modal>
+
+      {/* Category Menu Bottom Sheet */}
+      {selectedCategory && (
+        <BottomSheet
+          visible={showCategoryMenu}
+          onClose={() => setShowCategoryMenu(false)}
+          title={selectedCategory.name}
+          message="Choose an action"
+          options={[
+            {
+              text: 'Edit Category',
+              icon: 'create',
+              onPress: () => handleEditCategory(selectedCategory),
+            },
+            {
+              text: 'Move Money',
+              icon: 'swap-horizontal',
+              onPress: () => navigation.navigate('MoveCategoryMoney', {
+                budgetId: budget!.id,
+                sourceCategoryId: selectedCategory.id
+              }),
+            },
+            {
+              text: 'Delete Category',
+              icon: 'trash',
+              destructive: true,
+              onPress: () => {
+                setShowCategoryMenu(false);
+                // Small delay to let the menu close before opening delete confirm
+                setTimeout(() => handleDeleteCategory(selectedCategory), 100);
+              },
+            },
+          ]}
+        />
+      )}
+
+      {/* Delete Confirmation Bottom Sheet */}
+      {selectedCategory && (
+        <BottomSheet
+          visible={showDeleteConfirm}
+          onClose={() => setShowDeleteConfirm(false)}
+          title="Delete Category"
+          message={`Are you sure you want to delete ${selectedCategory.name}? This action cannot be undone.`}
+          options={[
+            {
+              text: 'Delete',
+              icon: 'trash',
+              destructive: true,
+              onPress: confirmDeleteCategory,
+            },
+          ]}
+        />
+      )}
+
+      {/* Cover Overspending Bottom Sheet */}
+      {selectedCategory && (
+        <BottomSheet
+          visible={showCoverOverspending}
+          onClose={() => setShowCoverOverspending(false)}
+          title="Cover Overspending"
+          message={`Select a category to cover ${formatCurrency(Math.abs(selectedCategory.available_amount))}`}
+          options={
+            categories
+              .filter(c => c.id !== selectedCategory.id && c.available_amount > 0)
+              .map(category => ({
+                text: `${category.name} (${formatCurrency(category.available_amount)})`,
+                icon: 'cash',
+                onPress: () => handleCoverFromCategory(category),
+              }))
+          }
+        />
+      )}
     </SafeAreaView>
   );
 }

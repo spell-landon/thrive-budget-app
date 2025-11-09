@@ -13,17 +13,17 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
 import {
-  getBudgetCategories,
+  getBudgetCategoriesByAccount,
   assignMoneyToCategory,
   quickAssignAllocatedAmount,
-  getReadyToAssign,
+  getReadyToAssignByAccount,
   validateCashBasedBudget,
 } from '../services/budgets';
 import { formatCurrency, parseCurrencyInput, formatCurrencyInput } from '../utils/currency';
 import { BudgetCategory } from '../types';
 
 export default function AssignMoneyScreen({ route, navigation }: any) {
-  const { budgetId } = route.params;
+  const { budgetId, accountId } = route.params;
   const { user } = useAuth();
   const [categories, setCategories] = useState<BudgetCategory[]>([]);
   const [assignments, setAssignments] = useState<Record<string, string>>({});
@@ -37,27 +37,25 @@ export default function AssignMoneyScreen({ route, navigation }: any) {
 
   // Pass submit handler to navigation params for header button
   useEffect(() => {
-    navigation.setParams({
-      handleSubmit: handleAssign,
-      loading: saving,
-    });
-  }, [saving, assignments]);
+    if (navigation && navigation.setParams) {
+      navigation.setParams({
+        handleSubmit: handleAssign,
+        loading: saving,
+      });
+    }
+  }, [saving, assignments, categories, readyToAssign]);
 
   const loadData = async () => {
-    if (!user) return;
+    if (!user || !accountId) return;
 
     try {
       const [categoriesData, readyAmount] = await Promise.all([
-        getBudgetCategories(budgetId),
-        getReadyToAssign(user.id, budgetId),
+        getBudgetCategoriesByAccount(budgetId, accountId),
+        getReadyToAssignByAccount(accountId, budgetId),
       ]);
 
-      // Filter to expense and savings categories only (not income)
-      const assignableCategories = categoriesData.filter(
-        (c) => c.category_type === 'expense' || c.category_type === 'savings'
-      );
-
-      setCategories(assignableCategories);
+      // All categories are 'expense' type now (savings are in goal-tracking accounts)
+      setCategories(categoriesData);
       setReadyToAssign(readyAmount);
     } catch (error: any) {
       Alert.alert('Error', error.message);
@@ -90,10 +88,10 @@ export default function AssignMoneyScreen({ route, navigation }: any) {
   };
 
   const handleQuickAssign = async (categoryId: string) => {
-    if (!user) return;
+    if (!user || !accountId) return;
 
     try {
-      await quickAssignAllocatedAmount(user.id, budgetId, categoryId);
+      await quickAssignAllocatedAmount(budgetId, categoryId);
 
       // Validate cash-based budget integrity after assignment
       const validation = await validateCashBasedBudget(user.id, budgetId);
@@ -114,7 +112,7 @@ export default function AssignMoneyScreen({ route, navigation }: any) {
   };
 
   const handleAssign = async () => {
-    if (!user) return;
+    if (!user || !accountId) return;
 
     const totalAssigning = getTotalAssigning();
 
@@ -140,7 +138,7 @@ export default function AssignMoneyScreen({ route, navigation }: any) {
 
         const amountToAssign = parseCurrencyInput(value);
         if (amountToAssign > 0) {
-          await assignMoneyToCategory(user.id, budgetId, categoryId, amountToAssign);
+          await assignMoneyToCategory(budgetId, categoryId, amountToAssign);
         }
       }
 

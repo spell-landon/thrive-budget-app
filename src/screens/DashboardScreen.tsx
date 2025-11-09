@@ -13,8 +13,9 @@ import { getAccounts } from '../services/accounts';
 import {
   getOrCreateCurrentMonthBudget,
   getBudgetCategories,
+  getTotalAllocated,
+  getTotalIncome,
 } from '../services/budgets';
-import { getPaycheckPlans, processDuePaychecks } from '../services/paychecks';
 import { getUpcomingSubscriptions } from '../services/subscriptions';
 import { getGoals } from '../services/goals';
 import { getTransactions } from '../services/transactions';
@@ -23,7 +24,6 @@ import {
   Account,
   Budget,
   BudgetCategory,
-  PaycheckPlan,
   Subscription,
   SavingsGoal,
   Transaction,
@@ -35,7 +35,6 @@ export default function DashboardScreen({ navigation }: any) {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [budget, setBudget] = useState<Budget | null>(null);
   const [categories, setCategories] = useState<BudgetCategory[]>([]);
-  const [paychecks, setPaychecks] = useState<PaycheckPlan[]>([]);
   const [upcomingSubscriptions, setUpcomingSubscriptions] = useState<
     Subscription[]
   >([]);
@@ -43,39 +42,48 @@ export default function DashboardScreen({ navigation }: any) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [totalIncome, setTotalIncome] = useState<number>(0);
+  const [totalAllocated, setTotalAllocated] = useState<number>(0);
 
   const loadAccounts = useCallback(async () => {
     if (!user) return;
 
     try {
-      // Process any due paychecks first
-      await processDuePaychecks(user.id);
-
       const [
         accountsData,
         budgetData,
-        paychecksData,
         subscriptionsData,
         goalsData,
         transactionsData,
       ] = await Promise.all([
         getAccounts(user.id),
         getOrCreateCurrentMonthBudget(user.id),
-        getPaycheckPlans(user.id),
         getUpcomingSubscriptions(user.id),
         getGoals(user.id),
         getTransactions(user.id),
       ]);
       setAccounts(accountsData);
       setBudget(budgetData);
-      setPaychecks(paychecksData);
       setUpcomingSubscriptions(subscriptionsData);
       setGoals(goalsData);
       setTransactions(transactionsData);
 
       if (budgetData) {
-        const categoriesData = await getBudgetCategories(budgetData.id);
+        const now = new Date();
+        const month = now.getMonth() + 1; // 1-12
+        const year = now.getFullYear();
+
+        const [categoriesData, incomeTotal, allocatedTotal] = await Promise.all([
+          getBudgetCategories(budgetData.id),
+          getTotalIncome(user.id, month, year),
+          getTotalAllocated(budgetData.id),
+        ]);
         setCategories(categoriesData);
+        setTotalIncome(incomeTotal);
+        setTotalAllocated(allocatedTotal);
+      } else {
+        setTotalIncome(0);
+        setTotalAllocated(0);
       }
     } catch (error) {
       console.error('Error loading data:', error);
@@ -163,25 +171,25 @@ export default function DashboardScreen({ navigation }: any) {
                 <View className='flex-row justify-between items-center mb-2'>
                   <Text className='text-text-secondary'>Income</Text>
                   <Text className='text-lg font-semibold text-success-600'>
-                    {formatCurrency(budget.total_income)}
+                    {formatCurrency(totalIncome)}
                   </Text>
                 </View>
                 <View className='flex-row justify-between items-center mb-2'>
                   <Text className='text-text-secondary'>Allocated</Text>
                   <Text className='text-lg font-semibold text-primary'>
-                    {formatCurrency(budget.total_allocated)}
+                    {formatCurrency(totalAllocated)}
                   </Text>
                 </View>
                 <View className='flex-row justify-between items-center'>
                   <Text className='text-text-secondary'>Remaining</Text>
                   <Text
                     className={`text-lg font-semibold ${
-                      budget.total_income - budget.total_allocated >= 0
+                      totalIncome - totalAllocated >= 0
                         ? 'text-success-600'
                         : 'text-error-600'
                     }`}>
                     {formatCurrency(
-                      Math.abs(budget.total_income - budget.total_allocated)
+                      Math.abs(totalIncome - totalAllocated)
                     )}
                   </Text>
                 </View>
@@ -208,117 +216,6 @@ export default function DashboardScreen({ navigation }: any) {
                   </Text>
                 </View>
               </TouchableOpacity>
-            )}
-          </View>
-
-          {/* Upcoming Paycheck */}
-          <View
-            className='bg-card rounded-xl p-4 mb-4'
-            style={{
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: 1 },
-              shadowOpacity: 0.05,
-              shadowRadius: 2,
-              elevation: 1,
-            }}>
-            <View className='flex-row justify-between items-center mb-3'>
-              <Text className='text-lg font-semibold text-text-primary'>
-                Upcoming Paychecks
-              </Text>
-              <TouchableOpacity
-                onPress={() => navigation.navigate('PaycheckPlanning')}>
-                <Text className='text-primary text-sm font-semibold'>
-                  See all
-                </Text>
-              </TouchableOpacity>
-            </View>
-            {paychecks.length === 0 ? (
-              <View className='items-center py-4'>
-                <Ionicons name='cash-outline' size={48} color='#9ca3af' />
-                <Text className='text-text-secondary mt-2 text-center mb-3'>
-                  No paychecks yet
-                </Text>
-                <TouchableOpacity
-                  onPress={() => navigation.navigate('PaycheckPlanning')}
-                  className='bg-primary px-4 py-2 rounded-lg'>
-                  <Text className='text-white font-semibold'>
-                    Plan Paychecks
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              (() => {
-                // Find the next upcoming paycheck
-                const today = new Date();
-                today.setHours(0, 0, 0, 0);
-
-                const sortedPaychecks = [...paychecks].sort((a, b) => {
-                  const dateA = new Date(a.next_date);
-                  const dateB = new Date(b.next_date);
-                  return dateA.getTime() - dateB.getTime();
-                });
-
-                const nextPaycheck =
-                  sortedPaychecks.find((p) => {
-                    const nextDate = new Date(p.next_date);
-                    nextDate.setHours(0, 0, 0, 0);
-                    return nextDate >= today;
-                  }) || sortedPaychecks[0];
-
-                if (!nextPaycheck) return null;
-
-                const nextDate = new Date(nextPaycheck.next_date);
-                nextDate.setHours(0, 0, 0, 0);
-                const daysUntil = Math.ceil(
-                  (nextDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
-                );
-                const isUpcoming = daysUntil <= 7 && daysUntil >= 0;
-
-                return (
-                  <TouchableOpacity
-                    onPress={() =>
-                      navigation.navigate('PaycheckAllocation', {
-                        paycheckId: nextPaycheck.id,
-                      })
-                    }
-                    className={`border rounded-lg p-3 ${
-                      isUpcoming
-                        ? 'border-success-500 bg-success-50'
-                        : 'border-gray-200'
-                    }`}>
-                    <View className='flex-row justify-between items-start'>
-                      <View className='flex-1'>
-                        <Text className='text-base font-semibold text-text-primary'>
-                          {nextPaycheck.name}
-                        </Text>
-                        <Text className='text-xs text-text-secondary mt-0.5'>
-                          {nextPaycheck.frequency.charAt(0).toUpperCase()}
-                          {nextPaycheck.frequency.slice(1)}
-                        </Text>
-                      </View>
-                      <View className='items-end'>
-                        <Text className='text-lg font-bold text-success-600'>
-                          {formatCurrency(nextPaycheck.amount)}
-                        </Text>
-                        <Text
-                          className={`text-xs font-semibold mt-0.5 ${
-                            isUpcoming
-                              ? 'text-success-700'
-                              : 'text-text-secondary'
-                          }`}>
-                          {daysUntil === 0
-                            ? 'Today!'
-                            : daysUntil === 1
-                            ? 'Tomorrow'
-                            : daysUntil < 0
-                            ? 'Past due'
-                            : `${daysUntil} days`}
-                        </Text>
-                      </View>
-                    </View>
-                  </TouchableOpacity>
-                );
-              })()
             )}
           </View>
 

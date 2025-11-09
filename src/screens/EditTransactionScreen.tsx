@@ -77,7 +77,7 @@ export default function EditTransactionScreen({ route, navigation }: any) {
       handleSubmit,
       loading: saving,
     });
-  }, [saving]);
+  }, [saving, selectedAccount, amount, description, type, date, isSubscription, subscriptionFrequency, selectedCategory, originalSubscriptionId]);
 
   const loadData = async () => {
     if (!user) return;

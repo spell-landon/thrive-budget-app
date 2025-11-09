@@ -16,10 +16,14 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { useAuth } from '../contexts/AuthContext';
 import {
   createGoal,
+  createGoalCategory,
   defaultGoalImages,
   getSuggestedImage,
 } from '../services/goals';
+import { getOrCreateCurrentMonthBudget } from '../services/budgets';
+import { getGoalTrackingAccounts, createAccount } from '../services/accounts';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Account } from '../types';
 
 export default function AddGoalScreen({ navigation }: any) {
   const { user } = useAuth();
@@ -30,8 +34,34 @@ export default function AddGoalScreen({ navigation }: any) {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [goalAccounts, setGoalAccounts] = useState<Account[]>([]);
+  const [selectedAccountId, setSelectedAccountId] = useState<string>('');
+  const [loadingAccounts, setLoadingAccounts] = useState(true);
 
   const imageOptions = Object.entries(defaultGoalImages);
+
+  // Load goal-tracking accounts
+  useEffect(() => {
+    loadGoalAccounts();
+  }, [user]);
+
+  const loadGoalAccounts = async () => {
+    if (!user) return;
+
+    try {
+      const accounts = await getGoalTrackingAccounts(user.id);
+      setGoalAccounts(accounts);
+
+      // Auto-select first account if available
+      if (accounts.length > 0) {
+        setSelectedAccountId(accounts[0].id);
+      }
+    } catch (error: any) {
+      console.error('Error loading goal accounts:', error);
+    } finally {
+      setLoadingAccounts(false);
+    }
+  };
 
   // Pass submit handler to navigation params for header button
   useEffect(() => {
@@ -39,7 +69,7 @@ export default function AddGoalScreen({ navigation }: any) {
       handleSubmit: handleSave,
       loading: saving,
     });
-  }, [saving]);
+  }, [saving, name, targetAmount, currentAmount, targetDate, selectedImage, selectedAccountId]);
 
   const handleDateChange = (event: any, selectedDate?: Date) => {
     if (Platform.OS === 'android') {
@@ -61,6 +91,34 @@ export default function AddGoalScreen({ navigation }: any) {
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
+  };
+
+  /**
+   * Get or create a goal-tracking account for goals
+   * Uses selected account if available, otherwise creates a default "Goals" savings account
+   */
+  const getOrCreateGoalTrackingAccount = async () => {
+    if (!user) throw new Error('User not authenticated');
+
+    // If user selected an account, use it
+    if (selectedAccountId) {
+      const account = goalAccounts.find(acc => acc.id === selectedAccountId);
+      if (account) return account;
+    }
+
+    // No goal-tracking accounts exist - create one
+    const newAccount = await createAccount(user.id, {
+      name: 'Goals',
+      type: 'savings',
+      balance: 0,
+      is_goal_tracking: true,
+    });
+
+    // Update the list
+    setGoalAccounts([newAccount]);
+    setSelectedAccountId(newAccount.id);
+
+    return newAccount;
   };
 
   const handleSave = async () => {
@@ -86,21 +144,39 @@ export default function AddGoalScreen({ navigation }: any) {
 
       const imageUrl = selectedImage || getSuggestedImage(name);
 
+      // Get or create a goal-tracking account
+      const goalAccount = await getOrCreateGoalTrackingAccount();
+
+      // Get current month's budget
+      const budget = await getOrCreateCurrentMonthBudget(user.id);
+
+      // Create category in goal-tracking account
+      const category = await createGoalCategory(
+        user.id,
+        budget.id,
+        goalAccount.id,
+        name.trim()
+      );
+
+      // Create the goal linked to this category
       await createGoal(user.id, {
         name: name.trim(),
         target_amount: targetAmountCents,
-        current_amount: currentAmountCents,
+        category_id: category.id,
         target_date: targetDate ? formatDate(targetDate) : undefined,
         image_url: imageUrl,
       });
 
+      // Note: Initial amount handling removed - user can assign money through budget screen
+      // The category's available_amount represents current progress toward the goal
+
       Alert.alert('Success', 'Goal created successfully!', [
         { text: 'OK', onPress: () => navigation.goBack() },
       ]);
+      // Don't reset saving state when navigating away - the screen is unmounting
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to create goal');
-    } finally {
-      setSaving(false);
+      setSaving(false); // Only reset saving if we're staying on the screen
     }
   };
 
@@ -121,6 +197,57 @@ export default function AddGoalScreen({ navigation }: any) {
               placeholderTextColor='#9ca3af'
               textAlignVertical='center'
             />
+          </View>
+
+          {/* Goal-Tracking Account Selection */}
+          <View className='mb-6'>
+            <Text className='text-base font-semibold text-text-primary mb-2'>
+              Goal-Tracking Account *
+            </Text>
+            {loadingAccounts ? (
+              <Text className='text-text-secondary'>Loading accounts...</Text>
+            ) : goalAccounts.length === 0 ? (
+              <View className='bg-blue-50 border border-blue-300 rounded-lg p-4'>
+                <Text className='text-blue-800 text-sm mb-2'>
+                  No goal-tracking accounts found. One will be created automatically when you save this goal.
+                </Text>
+              </View>
+            ) : (
+              <>
+                <View className='gap-2'>
+                  {goalAccounts.map((account) => (
+                    <TouchableOpacity
+                      key={account.id}
+                      onPress={() => setSelectedAccountId(account.id)}
+                      className={`flex-row items-center px-4 py-3 rounded-lg border ${
+                        selectedAccountId === account.id
+                          ? 'bg-primary-100 border-primary-500'
+                          : 'bg-card border-gray-200'
+                      }`}>
+                      <Ionicons
+                        name='wallet-outline'
+                        size={20}
+                        color={selectedAccountId === account.id ? '#C93B00' : '#6b7280'}
+                      />
+                      <Text
+                        className={`ml-2 flex-1 ${
+                          selectedAccountId === account.id
+                            ? 'text-primary-700 font-semibold'
+                            : 'text-text-primary'
+                        }`}>
+                        {account.name}
+                      </Text>
+                      {selectedAccountId === account.id && (
+                        <Ionicons name='checkmark-circle' size={20} color='#C93B00' />
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <Text className='text-xs text-text-tertiary mt-2'>
+                  This goal will create a category in the selected goal-tracking account
+                </Text>
+              </>
+            )}
           </View>
 
           {/* Target Amount */}

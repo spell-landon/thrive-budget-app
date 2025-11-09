@@ -11,14 +11,16 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../contexts/AuthContext';
-import { getGoals } from '../services/goals';
+import { getGoalsWithCategories } from '../services/goals';
 import { formatCurrency } from '../utils/currency';
-import { SavingsGoal } from '../types';
+import { SavingsGoal, BudgetCategory } from '../types';
 import { LinearGradient } from 'expo-linear-gradient';
 
 export default function GoalsScreen({ navigation }: any) {
   const { user } = useAuth();
-  const [goals, setGoals] = useState<SavingsGoal[]>([]);
+  const [goals, setGoals] = useState<
+    Array<SavingsGoal & { current_amount: number; category: BudgetCategory }>
+  >([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -26,7 +28,7 @@ export default function GoalsScreen({ navigation }: any) {
     if (!user) return;
 
     try {
-      const data = await getGoals(user.id);
+      const data = await getGoalsWithCategories(user.id);
       setGoals(data);
     } catch (error: any) {
       console.error('Error loading goals:', error);
@@ -185,6 +187,19 @@ export default function GoalsScreen({ navigation }: any) {
                                     month: 'short',
                                     year: 'numeric',
                                   })}
+                                </Text>
+                              </View>
+                            )}
+                            {goal.category && goal.category.account && (
+                              <View className='flex-row items-center mt-1'>
+                                <Ionicons
+                                  name='wallet-outline'
+                                  size={14}
+                                  color='white'
+                                />
+                                <Text className='text-white/90 text-xs ml-1'>
+                                  Account: {goal.category.account.name}
+                                  {goal.category.account.institution && ` (${goal.category.account.institution})`}
                                 </Text>
                               </View>
                             )}

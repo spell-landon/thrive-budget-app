@@ -9,11 +9,12 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../contexts/AuthContext';
-import { getAccountById, updateAccount, deleteAccount } from '../services/accounts';
+import { getAccountById, updateAccount, deleteAccount, canAccountBeGoalTracking } from '../services/accounts';
 import { centsToInputValue, parseCurrencyInput, formatCurrencyInput } from '../utils/currency';
 
 type AccountType = 'checking' | 'savings' | 'credit_card' | 'investment' | 'loan';
@@ -25,6 +26,7 @@ export default function EditAccountScreen({ route, navigation }: any) {
   const [type, setType] = useState<AccountType>('checking');
   const [balance, setBalance] = useState('');
   const [institution, setInstitution] = useState('');
+  const [isGoalTracking, setIsGoalTracking] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -54,7 +56,7 @@ export default function EditAccountScreen({ route, navigation }: any) {
       handleSubmit,
       loading: saving,
     });
-  }, [saving]);
+  }, [saving, name, type, balance, institution, isGoalTracking, accountId]);
 
   const loadAccount = async () => {
     try {
@@ -63,6 +65,7 @@ export default function EditAccountScreen({ route, navigation }: any) {
       setType(account.type);
       setBalance(centsToInputValue(account.balance));
       setInstitution(account.institution || '');
+      setIsGoalTracking(account.is_goal_tracking);
 
       // Store current account data for allocation/deletion
       setCurrentAccount({
@@ -97,14 +100,15 @@ export default function EditAccountScreen({ route, navigation }: any) {
         type,
         balance: balanceInCents,
         institution: institution.trim() || undefined,
+        is_goal_tracking: isGoalTracking,
       });
 
       Alert.alert('Success', 'Account updated successfully!');
       navigation.goBack();
+      // Don't reset saving state when navigating away - the screen is unmounting
     } catch (error: any) {
       Alert.alert('Error', error.message);
-    } finally {
-      setSaving(false);
+      setSaving(false); // Only reset saving if we're staying on the screen
     }
   };
 
@@ -133,18 +137,6 @@ export default function EditAccountScreen({ route, navigation }: any) {
     );
   };
 
-  const handleAllocateBalance = () => {
-    if (!user || !currentAccount || currentAccount.balance <= 0) {
-      Alert.alert('Notice', 'This account has no balance to allocate.');
-      return;
-    }
-
-    navigation.navigate('AllocationPreview', {
-      accountId: currentAccount.id,
-      accountName: currentAccount.name,
-      accountBalance: currentAccount.balance,
-    });
-  };
 
   if (loading) {
     return (
@@ -207,6 +199,30 @@ export default function EditAccountScreen({ route, navigation }: any) {
               </View>
             </View>
 
+            {/* Goal-Tracking Toggle (only for checking/savings/investment) */}
+            {canAccountBeGoalTracking(type) && (
+              <View className='mb-4 bg-white border border-gray-200 rounded-lg p-4'>
+                <View className='flex-row items-center justify-between mb-2'>
+                  <View className='flex-1 mr-4'>
+                    <Text className='text-gray-700 font-semibold mb-1'>
+                      Use for Goal Tracking
+                    </Text>
+                    <Text className='text-xs text-gray-600 leading-4'>
+                      Categories in this account will appear as savings goals.
+                      Perfect for dedicated savings accounts where each category
+                      represents a specific goal (Emergency Fund, Vacation, etc.)
+                    </Text>
+                  </View>
+                  <Switch
+                    value={isGoalTracking}
+                    onValueChange={setIsGoalTracking}
+                    trackColor={{ false: '#d1d5db', true: '#FCD5C5' }}
+                    thumbColor={isGoalTracking ? '#C93B00' : '#f3f4f6'}
+                  />
+                </View>
+              </View>
+            )}
+
             {/* Current Balance */}
             <View className="mb-4">
               <Text className="text-gray-700 font-semibold mb-2">
@@ -246,19 +262,6 @@ export default function EditAccountScreen({ route, navigation }: any) {
                 autoCapitalize="words"
               />
             </View>
-
-            {/* Allocate Balance Button (only for checking/savings with balance) */}
-            {currentAccount &&
-             (currentAccount.type === 'checking' || currentAccount.type === 'savings') &&
-             currentAccount.balance > 0 && (
-              <TouchableOpacity
-                onPress={handleAllocateBalance}
-                className="bg-primary px-6 py-3 rounded-lg mb-4 flex-row items-center justify-center"
-              >
-                <Ionicons name="share-outline" size={20} color="white" />
-                <Text className="text-white font-semibold ml-2">Allocate Balance</Text>
-              </TouchableOpacity>
-            )}
 
             {/* Delete Account Button */}
             <View className="mt-2 pt-6 border-t border-gray-200">

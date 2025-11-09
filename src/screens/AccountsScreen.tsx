@@ -11,9 +11,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../contexts/AuthContext';
-import { getAccounts } from '../services/accounts';
+import { getAccounts, canAccountHaveCategories } from '../services/accounts';
+import { getOrCreateCurrentMonthBudget, getReadyToAssignByAccount } from '../services/budgets';
 import { formatCurrency } from '../utils/currency';
 import { Account } from '../types';
+import BottomSheet from '../components/BottomSheet';
 
 export default function AccountsScreen({ navigation }: any) {
   const { user } = useAuth();
@@ -22,6 +24,9 @@ export default function AccountsScreen({ navigation }: any) {
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState('Net Worth');
   const [selectedPeriod, setSelectedPeriod] = useState('1M');
+  const [showAccountsMenu, setShowAccountsMenu] = useState(false);
+  const [budgetId, setBudgetId] = useState<string | null>(null);
+  const [readyToAssignByAccount, setReadyToAssignByAccount] = useState<Record<string, number>>({});
 
   const loadAccounts = useCallback(async () => {
     if (!user) return;
@@ -29,6 +34,25 @@ export default function AccountsScreen({ navigation }: any) {
     try {
       const data = await getAccounts(user.id);
       setAccounts(data);
+
+      // Get current month budget
+      const budget = await getOrCreateCurrentMonthBudget(user.id);
+      setBudgetId(budget.id);
+
+      // Load Ready to Assign for each account that can have categories
+      const readyToAssign: Record<string, number> = {};
+      for (const account of data) {
+        if (canAccountHaveCategories(account.type)) {
+          try {
+            const amount = await getReadyToAssignByAccount(account.id, budget.id);
+            readyToAssign[account.id] = amount;
+          } catch (error) {
+            // If error loading, set to 0
+            readyToAssign[account.id] = 0;
+          }
+        }
+      }
+      setReadyToAssignByAccount(readyToAssign);
 
       // Reset to "Net Worth" if currently selected institution no longer exists
       const institutions = Array.from(
@@ -57,6 +81,10 @@ export default function AccountsScreen({ navigation }: any) {
     setRefreshing(true);
     loadAccounts();
   }, [loadAccounts]);
+
+  const handleAccountsMenu = () => {
+    setShowAccountsMenu(true);
+  };
 
   const getAccountIcon = (type: string) => {
     switch (type) {
@@ -176,7 +204,7 @@ export default function AccountsScreen({ navigation }: any) {
               Accounts
             </Text>
             <View className='flex-row gap-2'>
-              <TouchableOpacity>
+              <TouchableOpacity onPress={handleAccountsMenu}>
                 <Ionicons
                   name='ellipsis-horizontal'
                   size={24}
@@ -378,6 +406,23 @@ export default function AccountsScreen({ navigation }: any) {
                                   }`}>
                                   {formatCurrency(account.balance)}
                                 </Text>
+                                {/* Show Ready to Assign for budgetable accounts */}
+                                {canAccountHaveCategories(account.type) && readyToAssignByAccount[account.id] !== undefined && (
+                                  <View className='mt-1 flex-row items-center'>
+                                    <Ionicons
+                                      name='wallet-outline'
+                                      size={12}
+                                      color={readyToAssignByAccount[account.id] > 0 ? '#10B981' : '#6B7280'}
+                                    />
+                                    <Text className={`text-xs ml-1 font-medium ${
+                                      readyToAssignByAccount[account.id] > 0
+                                        ? 'text-success-600'
+                                        : 'text-text-tertiary'
+                                    }`}>
+                                      {formatCurrency(readyToAssignByAccount[account.id])} to assign
+                                    </Text>
+                                  </View>
+                                )}
                               </View>
                             </View>
                           </TouchableOpacity>
@@ -391,6 +436,28 @@ export default function AccountsScreen({ navigation }: any) {
           )}
         </ScrollView>
       </View>
+
+      {/* Accounts Menu Bottom Sheet */}
+      <BottomSheet
+        visible={showAccountsMenu}
+        onClose={() => setShowAccountsMenu(false)}
+        title="Account Actions"
+        options={[
+          {
+            text: 'Reorder Accounts',
+            icon: 'reorder-three',
+            onPress: () => {
+              setShowAccountsMenu(false);
+              navigation.navigate('ReorderAccounts');
+            },
+          },
+          {
+            text: 'Transfer Money',
+            icon: 'swap-horizontal',
+            onPress: () => navigation.navigate('TransferMoney'),
+          },
+        ]}
+      />
     </SafeAreaView>
   );
 }
